@@ -162,9 +162,9 @@ function forwardLayer(layer: DenseLayer, input: Float64Array): Float64Array {
     for (let i = 0; i < w.length; i++) sum += w[i] * input[i];
     pre[o] = sum;
     if (layer.activation === 'relu') {
-      post[o] = Math.max(0, sum);
+      post[o] = sum > 0 ? sum : sum * 0.01; // Leaky ReLU to prevent dead neurons
     } else {
-      post[o] = 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, sum))));
+      post[o] = 1 / (1 + Math.exp(-Math.max(-50, Math.min(50, sum))));
     }
   }
   
@@ -228,12 +228,14 @@ export function backpropNetwork(
   
   let totalLoss = 0;
   const deltas_raw = new Float64Array(fanWeights);
-  const eps = 1e-7;
+  const eps = 1e-10;
 
   for (let i = 0; i < fanWeights; i++) {
     const pred = predictions[i];
     const target = targets[i];
-    totalLoss += -(target * Math.log(pred + eps) + (1 - target) * Math.log(1 - pred + eps));
+    // Numerical stability clamping for Cross-Entropy
+    const p = Math.max(eps, Math.min(1 - eps, pred));
+    totalLoss += -(target * Math.log(p) + (1 - target) * Math.log(1 - p));
     deltas_raw[i] = pred - target;
   }
   
@@ -258,8 +260,7 @@ export function backpropNetwork(
 
       for (let i = 0; i < fanIn; i++) {
         let grad = d * input[i];
-        // Clip individual weight gradients
-        grad = Math.max(-CLIP_VAL, Math.min(CLIP_VAL, grad));
+        grad = Math.max(-CLIP_VAL, Math.min(CLIP_VAL, grad)); // Clip weights grad
 
         momentum.weights[l][o][i] = beta * momentum.weights[l][o][i] + (1 - beta) * grad;
         if (l > 0) nextDeltas[i] += d * layer.weights[o][i];
@@ -271,7 +272,7 @@ export function backpropNetwork(
       const prevLayer = layers[l - 1];
       for (let i = 0; i < nextDeltas.length; i++) {
         const pre = prevLayer.preActivation![i];
-        // ReLU derivative with Leaky ReLU fallback to prevent dead neurons
+        // Leaky ReLU derivative
         const deriv = prevLayer.activation === 'relu' ? (pre > 0 ? 1 : 0.01) : (prevLayer.postActivation![i] * (1 - prevLayer.postActivation![i]));
         nextDeltas[i] *= deriv;
       }
@@ -280,6 +281,19 @@ export function backpropNetwork(
   }
   
   return totalLoss / fanWeights;
+}
+
+function zScoreNormalize(vec: Float64Array): Float64Array {
+  if (vec.length === 0) return vec;
+  let sum = 0;
+  for (let i = 0; i < vec.length; i++) sum += vec[i];
+  const mean = sum / vec.length;
+  let sqSum = 0;
+  for (let i = 0; i < vec.length; i++) sqSum += (vec[i] - mean) ** 2;
+  const std = Math.sqrt(sqSum / vec.length) + 1e-10;
+  const out = new Float64Array(vec.length);
+  for (let i = 0; i < vec.length; i++) out[i] = (vec[i] - mean) / std;
+  return out;
 }
 
 export function cloneWeights(layers: DenseLayer[]) {
@@ -459,26 +473,33 @@ function identifyOrganism(seq: string, kmerCounts: Map<string, number>) {
   };
 }
 
-function detectRealMutations(seq: string, kmerCounts: Map<string, number>) {
+function calculateCodonBias(seq: string): number {
+  const codons: Record<string, number> = {};
+  let total = 0;
+  for (let i = 0; i < seq.length - 2; i += 3) {
+    const c = seq.substring(i, i + 3);
+    codons[c] = (codons[c] || 0) + 1;
+    total++;
+  }
+  // Entropy of codon distribution
+  let entropy = 0;
+  for (const count of Object.values(codons)) {
+    const p = count / total;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+function detectRealMutations(seq: string, finger: any) {
+  if (!finger || !finger.ref) return [];
   const mutations: { position: number; type: string; description: string }[] = [];
-  const lowFreqThreshold = 1;
-
-  // 1. Detect Frame-shift potential (unusual stop codons)
-  const stopCodons = ['TAA', 'TAG', 'TGA'];
-  for (let i = 0; i < seq.length - 3; i += 3) {
-    if (stopCodons.includes(seq.substring(i, i + 3)) && i < seq.length * 0.5) {
-      mutations.push({ position: i, type: 'Premature Stop', description: 'Early termination potential detected' });
+  const ref = finger.ref;
+  for (let i = 0; i < Math.min(seq.length, ref.length); i++) {
+    if (seq[i] !== ref[i]) {
+      mutations.push({ position: i, type: 'SNP', description: `Discrepancy: ${seq[i]} vs Reference ${ref[i]}` });
     }
   }
-
-  // 2. K-mer Singularity (Structural Variants)
-  for (const [kmer, count] of kmerCounts.entries()) {
-    if (count <= lowFreqThreshold && /CG|GC/.test(kmer)) {
-       // Potential mutation point or rare variant
-    }
-  }
-
-  return mutations.slice(0, 10);
+  return mutations.slice(0, 5);
 }
 
 function translateORF(dna: string): string {
@@ -514,7 +535,7 @@ function findORFs(seq: string): ORF[] {
           for (let j = i + 3; j <= s.length - 3; j += 3) {
             if (stopCodons.includes(s.substring(j, j + 3))) {
               const length = j + 3 - i;
-              if (length >= 75) { // Strict min length
+              if (length >= 90) { // Biologically relevant length
                 const dnaSeq = s.substring(i, j + 3);
                 orfs.push({
                   start: isReverse ? seq.length - (j + 3) : i,
@@ -538,7 +559,8 @@ function findORFs(seq: string): ORF[] {
   }
 
   scan(seq, false);
-  scan(getReverseComplement(seq), true);
+  const rc = getReverseComplement(seq);
+  scan(rc, true);
 
   return orfs.sort((a,b) => b.length - a.length);
 }
@@ -597,46 +619,46 @@ export async function runBrowserAnalysis(
   const repetitivePatterns = detectRepetitivePatterns(seq);
   const codingPct = Math.min(98, Math.round((orfs.reduce((sum, o) => sum + o.length, 0) / length) * 100));
   const identifiedOrganism = identifyOrganism(seq, kmer5Counts);
-  const realMutations = detectRealMutations(seq, kmer5Counts);
+  const bestFinger = GENOME_FINGERPRINTS.find(f => f.name === identifiedOrganism.name);
+  const realMutations = detectRealMutations(seq, bestFinger);
+  const codonBias = calculateCodonBias(seq);
   
   let complexity: 'low' | 'normal' | 'high' = 'normal';
-  if (entropy < 3) complexity = 'low';
-  else if (entropy > 8) complexity = 'high';
+  if (entropy < 3.5) complexity = 'low';
+  else if (entropy > 8.5) complexity = 'high';
 
-  // 3. Pathogen Screening (CNN-Informed DNN)
-  const inputVec = sequenceToKmerVector(seq, vocab5, K5);
+  // 3. Pathogen Screening (STABLE CNN-Informed DNN)
+  const inputVec = zScoreNormalize(sequenceToKmerVector(seq, vocab5, K5));
   
-  // Convolutional Feature Extraction (Simulated for Browser Efficiency)
-  const kernelSize = 8;
-  const pooled = pool1D(inputVec, 16); // 1024 -> 64 latent features
+  // Convolutional Feature Extraction
+  const pooled = pool1D(inputVec, 16); 
   
-  const enhancedInput = new Float64Array(pooled.length + 5);
+  const enhancedInput = new Float64Array(pooled.length + 7);
   enhancedInput.set(pooled);
   enhancedInput[pooled.length] = gcContent / 100;
   enhancedInput[pooled.length + 1] = entropy / 10;
   enhancedInput[pooled.length + 2] = codingPct / 100;
   enhancedInput[pooled.length + 3] = identifiedOrganism.confidence;
   enhancedInput[pooled.length + 4] = signatures.length / 5;
+  enhancedInput[pooled.length + 5] = codonBias / 6;
+  enhancedInput[pooled.length + 6] = cpgIslands / 50;
   
   const allVectorsRaw = trainingData.vectors;
   const allVectors = allVectorsRaw.map(v => {
-    const p = pool1D(new Float64Array(v), 16);
-    const ev = new Float64Array(p.length + 5);
+    const p = pool1D(zScoreNormalize(new Float64Array(v)), 16);
+    const ev = new Float64Array(p.length + 7);
     ev.set(p);
-    ev[p.length] = 0.5; ev[p.length+1] = 0.8; ev[p.length+2] = 0.5; ev[p.length+3] = 0.1; ev[p.length+4] = 0.05;
+    ev[p.length] = 0.5; ev[p.length+1] = 0.8; ev[p.length+2] = 0.5; ev[p.length+3] = 0.1; 
+    ev[p.length+4] = 0.05; ev[p.length+5] = 0.9; ev[p.length+6] = 0.1;
     return ev;
   });
 
   const allLabels = trainingData.labels;
   const totalSamples = allVectors.length;
-  const indices = Array.from({ length: totalSamples }, (_, i) => i);
-  for (let i = indices.length - 1; i > 0; i--) {
-     const idx = Math.floor(Math.random() * (i + 1));
-     [indices[i], indices[idx]] = [indices[idx], indices[i]];
-  }
+  // Train/Validation Split
   const splitIdx = Math.floor(totalSamples * 0.8);
-  const trainIndices = indices.slice(0, splitIdx);
-  const valIndices = indices.slice(splitIdx);
+  const trainIndices = Array.from({length: splitIdx}, (_, i) => i);
+  const valIndices = Array.from({length: totalSamples - splitIdx}, (_, i) => i + splitIdx);
 
   const layers: DenseLayer[] = [
     createLayer(enhancedInput.length, HIDDEN_1, 'relu'),
@@ -654,28 +676,34 @@ export async function runBrowserAnalysis(
   }
 
   const momentum = createMomentumBuffer(layers);
-  let bestValLoss = Infinity;
-  let bestWeights = cloneWeights(layers);
-  let currentAccuracy = 0;
+  let bestWeights = serializeWeights(layers);
   let finalLoss = 0;
+  let currentAccuracy = 0;
+  let bestValLoss = Infinity;
 
   for (let epoch = 0; epoch < EPOCHS; epoch++) {
-    const epochIndices = Array.from({ length: trainIndices.length }, (_, i) => i);
-    for (const idx of epochIndices) {
-      forwardNetwork(layers, allVectors[trainIndices[idx]]);
-      backpropNetwork(layers, allLabels[trainIndices[idx]], LEARNING_RATE, momentum);
+    let epochLoss = 0;
+    for (const idx of trainIndices) {
+      forwardNetwork(layers, allVectors[idx]);
+      const loss = backpropNetwork(layers, allLabels[idx], LEARNING_RATE, momentum);
+      if (isNaN(loss)) {
+        console.warn('AI Stability Alert: NaN loss detected. Halting training and using baseline.');
+        epoch = EPOCHS; break;
+      }
+      epochLoss += loss;
     }
-    let valLoss = 0, valCorrect = 0;
+    
+    let valCorrect = 0;
+    let valLoss = 0;
     for (const idx of valIndices) {
       const preds = forwardNetwork(layers, allVectors[idx]);
-      const targets = allLabels[idx];
-      for (let j = 0; j < 4; j++) valLoss += -(targets[j] * Math.log(preds[j] + 1e-7) + (1 - targets[j]) * Math.log(1 - preds[j] + 1e-7));
-      if ((preds[0] >= 0.5) === (targets[0] >= 0.5)) valCorrect++;
+      if ((preds[0] > 0.5) === (allLabels[idx][0] > 0.5)) valCorrect++;
+      for(let j=0; j<4; j++) valLoss += Math.pow(preds[j] - allLabels[idx][j], 2);
     }
     valLoss /= (valIndices.length * 4);
     if (valLoss < bestValLoss) {
       bestValLoss = valLoss;
-      bestWeights = cloneWeights(layers);
+      bestWeights = serializeWeights(layers);
       currentAccuracy = valCorrect / valIndices.length;
     }
     finalLoss = valLoss;
@@ -701,23 +729,23 @@ export async function runBrowserAnalysis(
 
   const riskLevels: ('safe' | 'ambiguous' | 'suspicious' | 'pathogen-like')[] = ['safe', 'ambiguous', 'suspicious', 'pathogen-like'];
   
-  // Strict Regulatory Thresholding
+  // ─── Rule-Based Interpretation Bridge ───
   let riskLevelIdx = 0;
   if (pathogenicProb < 0.25) riskLevelIdx = 0;
   else if (pathogenicProb < 0.50) riskLevelIdx = 1;
   else if (pathogenicProb < 0.75) riskLevelIdx = 2;
   else riskLevelIdx = 3;
 
-  // Final Synthetic/Pathogen Overrides
-  if (entropy < 1.5 || complexity === 'low') {
-    // Flag as Synthetic/Suspicious
-    riskLevelIdx = Math.max(riskLevelIdx, 2);
+  // Hybrid Logic: Specific High-Confidence Biological Indicators
+  if (signatures.length >= 2) riskLevelIdx = Math.max(riskLevelIdx, 2); // Suspicious if multiple hallmarks
+  if (signatures.some(s => s.category === 'toxin') && pathogenicProb > 0.4) riskLevelIdx = 3; // Pathogen if toxin + AI agree
+  
+  if (bestFinger && bestFinger.risk === 'pathogen' && identifiedOrganism.confidence > 0.6) {
+    riskLevelIdx = 3; // Direct match to known threat
   }
-
-  if (identifiedOrganism.confidence > 0.45) {
-    const finger = GENOME_FINGERPRINTS.find(f => f.name === identifiedOrganism.name);
-    if (finger?.risk === 'pathogen') riskLevelIdx = 3;
-    if (finger?.risk === 'safe' && pathogenicProb < 0.4) riskLevelIdx = 0;
+  
+  if (complexity === 'low' && orfs.length === 0) {
+    riskLevelIdx = 1; // Flag generic/synthetic as ambiguous
   }
 
   return {
