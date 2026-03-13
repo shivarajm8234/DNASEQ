@@ -2,7 +2,7 @@
  * lib/dnn-engine.ts
  * 
  * A pure-JavaScript Dynamic DNN Engine that runs in the Browser.
- * Enables "Free Plan" deployment by moving computation to the client.
+ * Implements Statistical Analysis, Biological Gene Detection, and Pathogen Screening.
  */
 
 export interface DenseLayer {
@@ -19,17 +19,24 @@ export interface MomentumBuffer {
   biases: Float64Array[];
 }
 
+export interface ORF {
+  start: number;
+  end: number;
+  length: number;
+  sequence: string;
+}
+
 export interface AnalysisResult {
   sequenceLength: number;
   gcContent: number;
   atContent: number;
   baseComposition: { A: number; T: number; G: number; C: number };
   pathogenicProbability: number;
-  riskLevel: 'safe' | 'moderate' | 'high';
+  riskLevel: 'safe' | 'unknown' | 'suspicious' | 'pathogen-like';
   riskScore: number;
-  geneticVariationRisk: { score: number; level: 'safe' | 'moderate' | 'high'; description: string };
-  mutationFrequencyRisk: { score: number; level: 'safe' | 'moderate' | 'high'; description: string };
-  deletionRisk: { score: number; level: 'safe' | 'moderate' | 'high'; description: string };
+  geneticVariationRisk: { score: number; level: string; description: string };
+  mutationFrequencyRisk: { score: number; level: string; description: string };
+  deletionRisk: { score: number; level: string; description: string };
   safeRegions: number;
   moderateRiskRegions: number;
   highRiskRegions: number;
@@ -40,12 +47,21 @@ export interface AnalysisResult {
     accuracy: number;
   };
   kmerStats: {
-    uniqueKmers: number;
+    uniqueKmers5: number;
+    uniqueKmers6: number;
     totalKmers: number;
     topKmers: { kmer: string; count: number }[];
     shannonEntropy: number;
   };
-  codingRegionPct: number;
+  biologicalMetrics: {
+    orfs: ORF[];
+    startCodons: number[];
+    stopCodons: number[];
+    polyRegions: { base: string; count: number; maxLen: number }[];
+    repetitivePatterns: { pattern: string; count: number }[];
+    complexity: 'low' | 'normal' | 'high';
+    codingRegionPct: number;
+  };
   qualityScore: number;
 }
 
@@ -121,7 +137,7 @@ function forwardLayer(layer: DenseLayer, input: Float64Array): Float64Array {
     for (let i = 0; i < w.length; i++) sum += w[i] * input[i];
     pre[o] = sum;
     if (layer.activation === 'relu') {
-      post[o] = sum > 0 ? sum : 0;
+      post[o] = Math.max(0, sum);
     } else {
       post[o] = 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, sum))));
     }
@@ -207,9 +223,11 @@ export function cloneWeights(layers: DenseLayer[]) {
 export function restoreWeights(layers: DenseLayer[], saved: any) {
   for (let l = 0; l < layers.length; l++) {
     layers[l].biases = new Float64Array(saved.biases[l]);
-    layers[l].weights = saved.weights[l].map((w: Float64Array) => new Float64Array(w));
+    layers[l].weights = saved.weights[l].map((w: number[]) => new Float64Array(w));
   }
 }
+
+// ─── Bio & Stats Logic ───
 
 function calculateShannonEntropy(counts: Map<string, number>, total: number): number {
   let entropy = 0;
@@ -220,8 +238,60 @@ function calculateShannonEntropy(counts: Map<string, number>, total: number): nu
   return entropy;
 }
 
-function qualityScoreFromMetrics(entropy: number, accuracy: number): number {
-  return Math.min(99.9, Math.round((entropy / 10 * 50 + accuracy * 50) * 10) / 10);
+function detectPolyRegions(seq: string) {
+  const bases = ['A', 'T', 'G', 'C'];
+  return bases.map(b => {
+    const re = new RegExp(`${b}{4,}`, 'g');
+    const matches = seq.match(re) || [];
+    return {
+      base: b,
+      count: matches.length,
+      maxLen: matches.reduce((max, m) => Math.max(max, m.length), 0)
+    };
+  });
+}
+
+function detectRepetitivePatterns(seq: string) {
+  const patterns: { [key: string]: number } = {};
+  for (let len = 2; len <= 4; len++) {
+    for (let i = 0; i <= seq.length - len * 3; i++) {
+      const unit = seq.substring(i, i + len);
+      if (seq.substring(i + len, i + len * 2) === unit && seq.substring(i + len * 2, i + len * 3) === unit) {
+        patterns[unit] = (patterns[unit] || 0) + 1;
+        i += len * 2;
+      }
+    }
+  }
+  return Object.entries(patterns).map(([pattern, count]) => ({ pattern, count })).sort((a,b) => b.count - a.count).slice(0, 5);
+}
+
+function findORFs(seq: string): ORF[] {
+  const orfs: ORF[] = [];
+  const startCodon = 'ATG';
+  const stopCodons = ['TAA', 'TAG', 'TGA'];
+
+  for (let frame = 0; frame < 3; frame++) {
+    for (let i = frame; i <= seq.length - 3; i += 3) {
+      if (seq.substring(i, i + 3) === startCodon) {
+        for (let j = i + 3; j <= seq.length - 3; j += 3) {
+          if (stopCodons.includes(seq.substring(j, j + 3))) {
+            const length = j + 3 - i;
+            if (length >= 30) { // Min length for ORF
+              orfs.push({
+                start: i,
+                end: j + 3,
+                length,
+                sequence: seq.substring(i, j + 3)
+              });
+            }
+            i = j; // Move past this ORF
+            break;
+          }
+        }
+      }
+    }
+  }
+  return orfs.sort((a,b) => b.length - a.length);
 }
 
 /**
@@ -231,38 +301,69 @@ export async function runBrowserAnalysis(
   sequence: string, 
   trainingData: { vectors: number[][], labels: number[][] }
 ): Promise<AnalysisResult> {
-  const K = 5;
+  const seq = sequence.toUpperCase().replace(/[^ATGC]/g, '');
+  const K5 = 5;
+  const K6 = 6;
   const HIDDEN_1 = 64;
   const HIDDEN_2 = 32;
   const HIDDEN_3 = 16;
   const EPOCHS = 20;
   const LEARNING_RATE = 0.01;
 
-  const vocab = buildKmerVocabulary(K);
-  const vocabSize = vocab.size;
-  const inputVec = sequenceToKmerVector(sequence, vocab, K);
+  // 1. Statistical Analysis
+  const length = seq.length;
+  const counts = { A: 0, T: 0, G: 0, C: 0 };
+  for (const b of seq) { if (counts[b as keyof typeof counts] !== undefined) counts[b as keyof typeof counts]++; }
+  const gcContent = Math.round(((counts.G + counts.C) / length) * 100);
+  
+  const vocab5 = buildKmerVocabulary(K5);
+  const kmer5Counts = new Map<string, number>();
+  for (let i = 0; i <= length - K5; i++) {
+    const k = seq.substring(i, i + K5);
+    kmer5Counts.set(k, (kmer5Counts.get(k) || 0) + 1);
+  }
+  
+  const kmer6Counts = new Map<string, number>();
+  for (let i = 0; i <= length - K6; i++) {
+    const k = seq.substring(i, i + K6);
+    kmer6Counts.set(k, (kmer6Counts.get(k) || 0) + 1);
+  }
 
+  const entropy = calculateShannonEntropy(kmer5Counts, length - K5 + 1);
+
+  // 2. Biological Gene Detection
+  const orfs = findORFs(seq);
+  const startCodons = [];
+  for(let i=0; i<seq.length-2; i++) if(seq.substring(i, i+3) === 'ATG') startCodons.push(i);
+  const stopCodons = [];
+  for(let i=0; i<seq.length-2; i++) {
+    const c = seq.substring(i, i+3);
+    if(['TAA', 'TAG', 'TGA'].includes(c)) stopCodons.push(i);
+  }
+  const polyRegions = detectPolyRegions(seq);
+  const repetitivePatterns = detectRepetitivePatterns(seq);
+  const codingPct = Math.min(98, Math.round((orfs.reduce((sum, o) => sum + o.length, 0) / length) * 100));
+  
+  let complexity: 'low' | 'normal' | 'high' = 'normal';
+  if (entropy < 3) complexity = 'low';
+  else if (entropy > 8) complexity = 'high';
+
+  // 3. Pathogen Screening (DNN)
+  const inputVec = sequenceToKmerVector(seq, vocab5, K5);
   const allVectors = trainingData.vectors.map(v => new Float64Array(v));
   const allLabels = trainingData.labels;
   const totalSamples = allVectors.length;
   const indices = Array.from({ length: totalSamples }, (_, i) => i);
-  // Simple shuffle
   for (let i = indices.length - 1; i > 0; i--) {
-    const idx = Math.floor(Math.random() * (i + 1));
-    [indices[i], indices[idx]] = [indices[idx], indices[i]];
+     const idx = Math.floor(Math.random() * (i + 1));
+     [indices[i], indices[idx]] = [indices[idx], indices[i]];
   }
-
   const splitIdx = Math.floor(totalSamples * 0.8);
   const trainIndices = indices.slice(0, splitIdx);
   const valIndices = indices.slice(splitIdx);
 
-  const trainVectors = trainIndices.map(i => allVectors[i]);
-  const trainLabels = trainIndices.map(i => allLabels[i]);
-  const valVectors = valIndices.map(i => allVectors[i]);
-  const valLabels = valIndices.map(i => allLabels[i]);
-
   const layers: DenseLayer[] = [
-    createLayer(vocabSize, HIDDEN_1, 'relu'),
+    createLayer(vocab5.size, HIDDEN_1, 'relu'),
     createLayer(HIDDEN_1, HIDDEN_2, 'relu'),
     createLayer(HIDDEN_2, HIDDEN_3, 'relu'),
     createLayer(HIDDEN_3, 4, 'sigmoid'),
@@ -275,34 +376,23 @@ export async function runBrowserAnalysis(
   let finalLoss = 0;
 
   for (let epoch = 0; epoch < EPOCHS; epoch++) {
-    const epochIndices = Array.from({ length: trainVectors.length }, (_, i) => i);
-    for (let i = epochIndices.length - 1; i > 0; i--) {
-      const idx = Math.floor(Math.random() * (i + 1));
-      [epochIndices[i], epochIndices[idx]] = [epochIndices[idx], epochIndices[i]];
-    }
-
+    const epochIndices = Array.from({ length: trainIndices.length }, (_, i) => i);
     for (const idx of epochIndices) {
-      forwardNetwork(layers, trainVectors[idx]);
-      backpropNetwork(layers, trainLabels[idx], LEARNING_RATE, momentum);
+      forwardNetwork(layers, allVectors[trainIndices[idx]]);
+      backpropNetwork(layers, allLabels[trainIndices[idx]], LEARNING_RATE, momentum);
     }
-
-    let valLoss = 0;
-    let valCorrect = 0;
-    for (let i = 0; i < valVectors.length; i++) {
-      const preds = forwardNetwork(layers, valVectors[i]);
-      const targets = valLabels[i];
-      const eps = 1e-7;
-      for (let j = 0; j < 4; j++) {
-        valLoss += -(targets[j] * Math.log(preds[j] + eps) + (1 - targets[j]) * Math.log(1 - preds[j] + eps)) / 4;
-      }
+    let valLoss = 0, valCorrect = 0;
+    for (const idx of valIndices) {
+      const preds = forwardNetwork(layers, allVectors[idx]);
+      const targets = allLabels[idx];
+      for (let j = 0; j < 4; j++) valLoss += -(targets[j] * Math.log(preds[j] + 1e-7) + (1 - targets[j]) * Math.log(1 - preds[j] + 1e-7));
       if ((preds[0] >= 0.5) === (targets[0] >= 0.5)) valCorrect++;
     }
-
-    valLoss /= valVectors.length;
+    valLoss /= (valIndices.length * 4);
     if (valLoss < bestValLoss) {
       bestValLoss = valLoss;
       bestWeights = cloneWeights(layers);
-      currentAccuracy = valCorrect / valVectors.length;
+      currentAccuracy = valCorrect / valIndices.length;
     }
     finalLoss = valLoss;
   }
@@ -310,49 +400,46 @@ export async function runBrowserAnalysis(
   restoreWeights(layers, bestWeights);
   const finalPreds = forwardNetwork(layers, inputVec);
   
-  const riskScore = Math.round(finalPreds[0] * 100);
+  const pathogenicProb = finalPreds[0];
+  const riskScore = Math.round(pathogenicProb * 100);
   const gvScore = Math.round(finalPreds[1] * 100);
   const mfScore = Math.round(finalPreds[2] * 100);
   const delScore = Math.round(finalPreds[3] * 100);
 
-  const length = sequence.length;
-  const aCount = (sequence.match(/A/g) || []).length;
-  const tCount = (sequence.match(/T/g) || []).length;
-  const gCount = (sequence.match(/G/g) || []).length;
-  const cCount = (sequence.match(/C/g) || []).length;
-  const gcContent = Math.round(((gCount + cCount) / length) * 100);
-
-  const kmerCounts = new Map<string, number>();
-  for (let i = 0; i <= length - K; i++) {
-    const kmer = sequence.substring(i, i + K);
-    kmerCounts.set(kmer, (kmerCounts.get(kmer) || 0) + 1);
-  }
-  const entropy = calculateShannonEntropy(kmerCounts, length - K + 1);
-
-  const getLevel = (s: number) => s < 30 ? 'safe' : s < 70 ? 'moderate' : 'high';
+  const riskLevels: ('safe' | 'unknown' | 'suspicious' | 'pathogen-like')[] = ['safe', 'unknown', 'suspicious', 'pathogen-like'];
+  const riskLevelIdx = pathogenicProb < 0.25 ? 0 : pathogenicProb < 0.5 ? 1 : pathogenicProb < 0.75 ? 2 : 3;
 
   return {
     sequenceLength: length,
     gcContent,
     atContent: 100 - gcContent,
-    baseComposition: { A: aCount, T: tCount, G: gCount, C: cCount },
-    pathogenicProbability: finalPreds[0],
-    riskLevel: getLevel(riskScore) as any,
+    baseComposition: { A: counts.A, T: counts.T, G: counts.G, C: counts.C },
+    pathogenicProbability: pathogenicProb,
+    riskLevel: riskLevels[riskLevelIdx],
     riskScore,
-    geneticVariationRisk: { score: gvScore, level: getLevel(gvScore) as any, description: 'Client-side DNN analysis complete' },
-    mutationFrequencyRisk: { score: mfScore, level: getLevel(mfScore) as any, description: 'Client-side mutation prediction' },
-    deletionRisk: { score: delScore, level: getLevel(delScore) as any, description: 'Client-side structural assessment' },
+    geneticVariationRisk: { score: gvScore, level: gvScore < 30 ? 'safe' : gvScore < 70 ? 'moderate' : 'high', description: 'Structural variation potential' },
+    mutationFrequencyRisk: { score: mfScore, level: mfScore < 30 ? 'safe' : mfScore < 70 ? 'moderate' : 'high', description: 'Predicted point mutation rate' },
+    deletionRisk: { score: delScore, level: delScore < 30 ? 'safe' : delScore < 70 ? 'moderate' : 'high', description: 'Susceptibility to structural loss' },
     safeRegions: Math.max(0, 100 - riskScore),
     moderateRiskRegions: Math.floor(riskScore * 0.4),
     highRiskRegions: Math.ceil(riskScore * 0.6),
     trainingMetrics: { epochs: EPOCHS, finalLoss, bestLoss: bestValLoss, accuracy: currentAccuracy },
     kmerStats: { 
-      uniqueKmers: kmerCounts.size, 
-      totalKmers: length - K + 1, 
-      topKmers: Array.from(kmerCounts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([kmer,count])=>({kmer,count})),
+      uniqueKmers5: kmer5Counts.size, 
+      uniqueKmers6: kmer6Counts.size, 
+      totalKmers: length - K5 + 1, 
+      topKmers: Array.from(kmer5Counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([kmer,count])=>({kmer,count})),
       shannonEntropy: entropy 
     },
-    codingRegionPct: Math.min(95, Math.round(45 + riskScore * 0.3)),
-    qualityScore: qualityScoreFromMetrics(entropy, currentAccuracy),
+    biologicalMetrics: {
+      orfs,
+      startCodons,
+      stopCodons,
+      polyRegions,
+      repetitivePatterns,
+      complexity,
+      codingRegionPct: codingPct
+    },
+    qualityScore: Math.min(99.9, Math.round((entropy / 10 * 40 + (1 - pathogenicProb) * 60) * 10) / 10),
   };
 }
