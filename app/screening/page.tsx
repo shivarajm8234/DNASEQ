@@ -370,9 +370,9 @@ export default function ScreeningPage() {
                     <div className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest inline-block mx-auto ${
                       analysisResult.riskLevel === 'pathogen-like' ? 'bg-red-500 text-white' : 
                       analysisResult.riskLevel === 'suspicious' ? 'bg-orange-500 text-white' :
-                      analysisResult.riskLevel === 'unknown' ? 'bg-yellow-500 text-black' : 'bg-green-500 text-white'
+                      analysisResult.riskLevel === 'ambiguous' ? 'bg-yellow-500 text-black' : 'bg-green-500 text-white'
                     }`}>
-                      {analysisResult.riskLevel}
+                      {analysisResult.riskLevel === 'ambiguous' ? 'Ambiguous / Novel' : analysisResult.riskLevel}
                     </div>
                   </div>
                 </div>
@@ -409,9 +409,9 @@ export default function ScreeningPage() {
                     <div className={`text-5xl font-black uppercase tracking-tighter ${
                       analysisResult.riskLevel === 'pathogen-like' ? 'text-red-400' : 
                       analysisResult.riskLevel === 'suspicious' ? 'text-orange-400' :
-                      analysisResult.riskLevel === 'unknown' ? 'text-yellow-400' : 'text-green-400'
+                      analysisResult.riskLevel === 'ambiguous' ? 'text-yellow-400' : 'text-green-400'
                     }`}>
-                      {analysisResult.riskLevel.replace('-', ' ')}
+                      {analysisResult.riskLevel === 'ambiguous' ? 'AMBIGUOUS' : analysisResult.riskLevel.replace('-', ' ')}
                     </div>
                     <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
                       <div className="h-full bg-white transition-all duration-1000" style={{ width: `${analysisResult.qualityScore}%` }}></div>

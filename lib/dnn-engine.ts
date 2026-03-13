@@ -32,7 +32,7 @@ export interface AnalysisResult {
   atContent: number;
   baseComposition: { A: number; T: number; G: number; C: number };
   pathogenicProbability: number;
-  riskLevel: 'safe' | 'unknown' | 'suspicious' | 'pathogen-like';
+  riskLevel: 'safe' | 'ambiguous' | 'suspicious' | 'pathogen-like';
   riskScore: number;
   geneticVariationRisk: { score: number; level: string; description: string };
   mutationFrequencyRisk: { score: number; level: string; description: string };
@@ -280,12 +280,14 @@ function detectRepetitivePatterns(seq: string) {
 }
 
 const GENOME_FINGERPRINTS = [
-  { name: 'Homo sapiens (Human Ref)', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC'], risk: 'safe' },
-  { name: 'Escherichia coli', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA'], risk: 'safe' },
-  { name: 'Saccharomyces cerevisiae', type: 'Fungi', motifs: ['TATAA', 'TTATA', 'AATAA'], risk: 'safe' },
-  { name: 'SARS-CoV-2 (Variant B.1.1.7)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT'], risk: 'pathogen' },
-  { name: 'Influenza A Virus', type: 'Virus', motifs: ['GGGTG', 'CACCC', 'TGGGT'], risk: 'pathogen' },
-  { name: 'Bacillus anthracis (Simulant)', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT'], risk: 'pathogen' },
+  { name: 'Homo sapiens', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC', 'GCTAG', 'CATGC', 'ATGCC', 'TGGCA', 'GGCAT', 'TTCAG'], risk: 'safe' },
+  { name: 'Escherichia coli', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA', 'AAATT', 'TTTAA', 'AATTA', 'GCCGC', 'CGGCG'], risk: 'safe' },
+  { name: 'Bacillus subtilis', type: 'Bacteria', motifs: ['AACAA', 'TTGTT', 'AACAA', 'GGCTC', 'CCGAG'], risk: 'safe' },
+  { name: 'Saccharomyces cerevisiae', type: 'Fungi', motifs: ['TATAA', 'TTATA', 'AATAA', 'ATATA', 'TATAT', 'AAAAA', 'TTTTT'], risk: 'safe' },
+  { name: 'SARS-CoV-2 (Variant)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT', 'GTACA', 'TGTAG', 'TTAAA', 'CGTTT'], risk: 'pathogen' },
+  { name: 'Influenza A Virus', type: 'Virus', motifs: ['GGGTG', 'CACCC', 'TGGGT', 'GTGGG', 'CCACG', 'AGTTC', 'AAAAA'], risk: 'pathogen' },
+  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT', 'GTTTT', 'AAAAA', 'GGGGG', 'CCCCC'], risk: 'pathogen' },
+  { name: 'Ebola Virus', type: 'Virus', motifs: ['AGAGG', 'GGAGA', 'AAGAG', 'TCTCC', 'CCTCT', 'TTCTT', 'AAAAA'], risk: 'pathogen' },
 ];
 
 function identifyOrganism(kmerCounts: Map<string, number>) {
@@ -508,8 +510,31 @@ export async function runBrowserAnalysis(
   const mfScore = Math.round(finalPreds[2] * 100);
   const delScore = Math.round(finalPreds[3] * 100);
 
-  const riskLevels: ('safe' | 'unknown' | 'suspicious' | 'pathogen-like')[] = ['safe', 'unknown', 'suspicious', 'pathogen-like'];
-  const riskLevelIdx = pathogenicProb < 0.25 ? 0 : pathogenicProb < 0.5 ? 1 : pathogenicProb < 0.75 ? 2 : 3;
+  const riskLevels: ('safe' | 'ambiguous' | 'suspicious' | 'pathogen-like')[] = ['safe', 'ambiguous', 'suspicious', 'pathogen-like'];
+  
+  // Decisive Thresholding & Biological Priority
+  let riskLevelIdx = 0; 
+  if (pathogenicProb < 0.35) {
+    riskLevelIdx = 0; // Safe Range
+  } else if (pathogenicProb < 0.65) {
+    riskLevelIdx = 1; // Ambiguous Range
+  } else if (pathogenicProb < 0.85) {
+    riskLevelIdx = 2; // Suspicious Range
+  } else {
+    riskLevelIdx = 3; // Threat Range
+  }
+
+  // Biological Evidence Overlays
+  if (identifiedOrganism.confidence > 0.3) {
+    const finger = GENOME_FINGERPRINTS.find(f => f.name === identifiedOrganism.name);
+    if (finger?.risk === 'pathogen') riskLevelIdx = Math.max(riskLevelIdx, 2);
+    if (finger?.risk === 'safe' && pathogenicProb < 0.5) riskLevelIdx = 0;
+  }
+
+  if (complexity === 'low') riskLevelIdx = Math.max(riskLevelIdx, 1); 
+  if (entropy < 2.0) riskLevelIdx = 2; // High suspicion for extremely low entropy (synthetic)
+  
+  if (riskLevelIdx === 1 && pathogenicProb > 0.5) riskLevelIdx = 2; // Nudge ambiguous towards suspicious if prob is high
 
   return {
     result: {
