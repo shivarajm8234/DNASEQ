@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "reports": {
+      ".read": true,
+      "$report_id": {
+        ".write": "!data.exists()",
+        ".validate": "newData.hasChildren(['name', 'score', 'timestamp', 'sequenceLength', 'mutations', 'gcContent'])"
+      }
+    }
+  }
+}
