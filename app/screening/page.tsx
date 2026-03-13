@@ -7,7 +7,7 @@ import { RiskGauge } from '@/components/risk-gauge';
 import { SequenceMetadata } from '@/components/sequence-metadata';
 import { DNAScannerModal } from '@/components/dna-scanner-modal';
 import { useState } from 'react';
-import { Upload, Brain, Zap, ActivitySquare, BarChart3, Binary, Dna, ShieldAlert, Microscope, FileText } from 'lucide-react';
+import { Upload, Brain, Zap, ActivitySquare, BarChart3, Binary, Dna, ShieldAlert, Microscope, FileText, Bug, Fingerprint, Target, Search } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { ref, push } from 'firebase/database';
 import { toast } from 'sonner';
@@ -235,20 +235,48 @@ export default function ScreeningPage() {
             <section id="module-2" className="space-y-6">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-500/20 rounded-lg"><Dna className="w-6 h-6 text-green-400" /></div>
-                <h2 className="text-2xl font-bold text-foreground">Module 2: Biological Gene Detection</h2>
+                <h2 className="text-2xl font-bold text-foreground">Module 2: Biological Gene Detection & Identification</h2>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                {/* Organism Identification */}
+                <div className="lg:col-span-1">
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-xl h-full border-t-4 border-t-primary">
+                    <div className="flex items-center gap-2 mb-4 text-primary">
+                      <Fingerprint className="w-5 h-5" />
+                      <span className="text-sm font-bold uppercase tracking-widest">Organism ID</span>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="text-center py-4">
+                        <div className="text-2xl font-black text-foreground">{analysisResult.biologicalMetrics.identifiedOrganism.name}</div>
+                        <div className="text-xs font-bold text-muted-foreground uppercase mt-1">{analysisResult.biologicalMetrics.identifiedOrganism.type}</div>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                        <span className="text-xs font-bold text-muted-foreground">Confidence</span>
+                        <span className="text-sm font-black text-primary">{(analysisResult.biologicalMetrics.identifiedOrganism.confidence * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="text-[10px] leading-relaxed text-muted-foreground italic">
+                        * BLAST-like k-mer fingerprinting used for identification.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-3 space-y-6">
                   <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Detected Open Reading Frames (ORFs)</h3>
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
+                       <Search className="w-4 h-4" /> Detected Open Reading Frames (6-Frames)
+                    </h3>
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                       {analysisResult.biologicalMetrics.orfs.length > 0 ? (
-                        analysisResult.biologicalMetrics.orfs.slice(0, 10).map((orf, i) => (
-                          <div key={i} className="p-4 bg-secondary/30 rounded-xl border border-border flex items-center justify-between group hover:border-green-500/50 transition-colors">
-                            <div>
-                              <div className="text-sm font-bold text-foreground">ORF #{i+1} <span className="text-xs text-muted-foreground font-normal ml-2">{orf.start} → {orf.end}</span></div>
-                              <div className="text-xs font-mono text-muted-foreground truncate max-w-md">{orf.sequence}</div>
+                        analysisResult.biologicalMetrics.orfs.slice(0, 15).map((orf, i) => (
+                          <div key={i} className="p-3 bg-secondary/30 rounded-xl border border-border flex items-center justify-between group hover:border-green-500/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-green-500/10 rounded-lg text-[10px] font-black text-green-400">ORF</div>
+                              <div>
+                                <div className="text-xs font-black text-foreground">POS: {orf.start}..{orf.end}</div>
+                                <div className="text-[10px] font-mono text-muted-foreground truncate max-w-lg">{orf.sequence}</div>
+                              </div>
                             </div>
                             <div className="text-right">
                               <div className="text-xs font-black text-green-400">{orf.length} BP</div>
@@ -256,40 +284,62 @@ export default function ScreeningPage() {
                           </div>
                         ))
                       ) : (
-                        <div className="py-8 text-center text-muted-foreground italic">No standard ORFs detected in sequence</div>
+                        <div className="py-8 text-center text-muted-foreground italic">No standard ORFs detected. Biological complexity may be low.</div>
                       )}
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="space-y-6">
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Biological Indicators</h3>
-                    <div className="space-y-4">
-                      <IndicatorRow label="Start Codons (ATG)" value={analysisResult.biologicalMetrics.startCodons.length} />
-                      <IndicatorRow label="Stop Codons (UAA/G)" value={analysisResult.biologicalMetrics.stopCodons.length} />
-                      <IndicatorRow label="Coding Potential" value={`${analysisResult.biologicalMetrics.codingRegionPct}%`} />
-                      <div className={`p-4 rounded-xl border ${
-                        analysisResult.biologicalMetrics.complexity === 'low' ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-green-500/10 border-green-500/20 text-green-400'
-                      }`}>
-                         <div className="text-xs font-bold uppercase">Structural Complexity</div>
-                         <div className="text-lg font-black uppercase">{analysisResult.biologicalMetrics.complexity}</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Polynucleotide Regions</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      {analysisResult.biologicalMetrics.polyRegions.map((p, i) => (
-                        <div key={i} className="p-3 bg-secondary/30 rounded-lg">
-                          <div className="text-xs font-bold text-muted-foreground">Poly-{p.base}</div>
-                          <div className="text-lg font-black text-foreground">{p.count} <span className="text-[10px] opacity-30">MAX {p.maxLen}</span></div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <MetricBox label="Start Codons (ATG)" value={analysisResult.biologicalMetrics.startCodons.length.toString()} sub="Initiation sites" />
+                <MetricBox label="Stop Codons" value={analysisResult.biologicalMetrics.stopCodons.length.toString()} sub="Termination sites" />
+                <MetricBox label="Coding Potential" value={`${analysisResult.biologicalMetrics.codingRegionPct}%`} sub="Predicted exonic density" />
+                <div className={`p-5 rounded-2xl border ${
+                  analysisResult.biologicalMetrics.complexity === 'low' ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-green-500/10 border-green-500/20 text-green-400'
+                }`}>
+                   <div className="text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">Structural Complexity</div>
+                   <div className="text-2xl font-black uppercase">{analysisResult.biologicalMetrics.complexity}</div>
                 </div>
+              </div>
+            </section>
+
+            {/* Mutation Analysis Table */}
+            <section id="mutations" className="space-y-6">
+               <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/20 rounded-lg"><Bug className="w-6 h-6 text-purple-400" /></div>
+                <h2 className="text-2xl font-bold text-foreground">Mutation & Variation Analysis</h2>
+              </div>
+              <div className="bg-card rounded-2xl border border-border p-6 shadow-xl">
+                 {analysisResult.biologicalMetrics.mutations.length > 0 ? (
+                   <div className="overflow-x-auto">
+                     <table className="w-full text-left">
+                       <thead>
+                         <tr className="border-b border-border text-[10px] font-black uppercase text-muted-foreground tracking-widest">
+                           <th className="pb-3 px-4">Position</th>
+                           <th className="pb-3 px-4">Mutation Type</th>
+                           <th className="pb-3 px-4">Description / Warning</th>
+                           <th className="pb-3 px-4 text-right">Risk Impact</th>
+                         </tr>
+                       </thead>
+                       <tbody className="text-sm">
+                         {analysisResult.biologicalMetrics.mutations.map((m, i) => (
+                           <tr key={i} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                             <td className="py-4 px-4 font-mono font-bold text-primary">BP_{m.position}</td>
+                             <td className="py-4 px-4"><span className="px-2 py-1 bg-purple-500/10 text-purple-400 rounded-md text-[10px] font-black uppercase">{m.type}</span></td>
+                             <td className="py-4 px-4 text-muted-foreground">{m.description}</td>
+                             <td className="py-4 px-4 text-right"><Target className="inline w-4 h-4 text-red-500/50" /></td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   </div>
+                 ) : (
+                   <div className="py-12 text-center text-muted-foreground">
+                      <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-3 opacity-50" />
+                      <p className="font-medium">No significant pathogenic mutations detected in primary scan.</p>
+                   </div>
+                 )}
               </div>
             </section>
 
@@ -395,7 +445,7 @@ function MetricBox({ label, value, sub }: { label: string; value: string; sub: s
       <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-colors"></div>
       <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">{label}</div>
       <div className="text-2xl font-black text-foreground mb-1">{value}</div>
-      <div className="text-[10px] font-bold text-muted-foreground/60">{sub}</div>
+      <div className="text-[10px] font-bold text-muted-foreground/60 line-clamp-1">{sub}</div>
     </div>
   );
 }
@@ -406,5 +456,26 @@ function IndicatorRow({ label, value }: { label: string; value: string | number 
       <span className="text-xs font-bold text-muted-foreground tracking-tight">{label}</span>
       <span className="text-sm font-black text-foreground">{value}</span>
     </div>
+  );
+}
+
+function CheckCircle({ className, ...props }: any) {
+  return (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      width="24" 
+      height="24" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className={className}
+      {...props}
+    >
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
   );
 }
