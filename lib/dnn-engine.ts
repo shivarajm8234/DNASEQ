@@ -117,12 +117,7 @@ export function sequenceToKmerVector(seq: string, vocab: Map<string, number>, k:
     const idx = vocab.get(kmer);
     if (idx !== undefined) vec[idx]++;
   }
-  let norm = 0;
-  for (let i = 0; i < vec.length; i++) norm += vec[i] * vec[i];
-  norm = Math.sqrt(norm);
-  if (norm > 0) {
-    for (let i = 0; i < vec.length; i++) vec[i] /= norm;
-  }
+  // No internal normalization; rely on external zScoreNormalize for consistency
   return vec;
 }
 
@@ -388,10 +383,30 @@ function detectCpGIslands(seq: string): number {
 const VIRULENCE_SIGNATURES: { motif: string, name: string, category: 'virulence' | 'toxin' | 'resistance' | 'hallmark', description: string }[] = [
   { motif: 'ACCGT', name: 'Alpha-Toxin Marker', category: 'toxin', description: 'Associated with staphylococcal pore-forming toxins' },
   { motif: 'GGTCA', name: 'VirB Operon Motif', category: 'virulence', description: 'Type IV secretion system marker common in bacterial pathogens' },
-  { motif: 'TTTCG', name: 'ndm-1 Hallmark', category: 'resistance', description: 'Linked to carbapenem resistance genes' },
-  { motif: 'GCCAA', name: 'Capsule Biosynthesis', category: 'virulence', description: 'Enables evasion of immune response' },
+  { motif: 'TTTCG', name: 'ndm-1 Hallmark', category: 'resistance', description: 'Linked to carbapenem resistance genes (Metallo-beta-lactamase)' },
+  { motif: 'GCCAA', name: 'Capsule Biosynthesis', category: 'virulence', description: 'Enables evasion of immune response (e.g., B. anthracis)' },
   { motif: 'TATAA', name: 'Viral Promoter Hallmark', category: 'hallmark', description: 'High-efficiency transcription site for viral replication' },
+  { motif: 'ACCGTTTTATTA', name: 'Cholera Toxin CtxA', category: 'toxin', description: 'ADP-ribosyltransferase subunit of Vibrio cholerae toxin' },
+  { motif: 'TTAGCACTTG', name: 'mecA Resistance', category: 'resistance', description: 'Methicillin resistance marker (MRSA hallmark)' },
+  { motif: 'TAGTAGTAGTAG', name: 'Poly-Q Virulence', category: 'hallmark', description: 'High-repeat region associated with host interaction proteins' },
+  { motif: 'CCCGGGAAATTT', name: 'Type III Secretion System', category: 'virulence', description: 'Gram-negative pathogen injection machinery' },
 ];
+
+const PROTEIN_MOTIFS = [
+  { motif: 'KDEL', name: 'ER Retention Signal', function: 'Protein trafficking' },
+  { motif: 'RGDC', name: 'Cell Adhesion Domain', function: 'Host cell interaction' },
+  { motif: 'HELAH', name: 'Zinc Finger Motif', function: 'DNA Binding/Regulation' },
+  { motif: 'TGATG', name: 'Metal Binding Site', function: 'Catalytic activity' },
+  { motif: 'LLLL', name: 'Leucine Zipper', function: 'Dimerization domain' },
+];
+
+function predictProteinFunction(aa: string): string[] {
+  const found: string[] = [];
+  for (const m of PROTEIN_MOTIFS) {
+    if (aa.includes(m.motif)) found.push(m.name);
+  }
+  return found;
+}
 
 function scanPathogenicSignatures(seq: string): PathogenSignature[] {
   const results: PathogenSignature[] = [];
@@ -456,30 +471,35 @@ const GENOME_FINGERPRINTS = [
 
 function identifyOrganism(seq: string, kmerCounts: Map<string, number>) {
   const candidates = GENOME_FINGERPRINTS.map(finger => {
-    // 1. K-mer Motif Score (30% weight)
-    let motifMatches = 0;
-    for (const m of finger.motifs) { if (kmerCounts.has(m)) motifMatches++; }
-    const motifScore = (motifMatches / finger.motifs.length) * 30;
+    // 1. Seed Score (Fast search)
+    let seeds = 0;
+    for (const m of finger.motifs) { if (kmerCounts.has(m)) seeds++; }
+    const seedDensity = seeds / finger.motifs.length;
 
-    // 2. Local Alignment Score (70% weight) - Scan first 300bp for better context
-    const alignment = localAlignment(seq.substring(0, 300), finger.ref);
-    const alignScore = (alignment.identity * alignment.coverage / 100) * 0.7;
+    // 2. Extend/Align Score (Precision)
+    // Perform alignment on a larger window if seed density is high
+    const alignWindow = seedDensity > 0.4 ? 500 : 200;
+    const alignment = localAlignment(seq.substring(0, alignWindow), finger.ref);
+    
+    // Identity * Coverage * SeedDensity weighting
+    const similarity = Math.round((alignment.identity * 0.5) + (seedDensity * 100 * 0.3) + (alignment.coverage * 0.2));
 
     return { 
       name: finger.name, 
-      similarity: Math.round(motifScore + alignScore), 
+      similarity: Math.min(100, similarity),
       type: finger.type,
-      identity: alignment.identity
+      identity: alignment.identity,
+      coverage: alignment.coverage
     };
   });
 
   const sorted = candidates.sort((a,b) => b.similarity - a.similarity);
-  const best = sorted[0] || { name: 'Novel Genotype', similarity: 0, type: 'Unknown' };
+  const best = sorted[0];
 
   return {
-    name: best.name,
-    confidence: best.similarity / 100,
-    type: best.type,
+    name: best?.similarity > 20 ? best.name : 'Ambiguous Genotype',
+    confidence: (best?.similarity || 0) / 100,
+    type: best?.type || 'Unknown',
     topMatches: sorted.slice(0, 5).map(c => ({ name: c.name, similarity: c.similarity, type: c.type }))
   };
 }
@@ -545,14 +565,16 @@ function findORFs(seq: string): ORF[] {
           for (let j = i + 3; j < s.length - 3; j += 3) {
             if (stops.includes(s.substring(j, j + 3))) {
               const len = j + 3 - i;
-              if (len >= 75) { // Sensitivity optimized
+              if (len >= 90) { // Biologically relevant threshold
                 const sub = s.substring(i, j + 3);
+                const protein = translateORF(sub);
+                const functions = predictProteinFunction(protein);
                 orfs.push({
                   start: isRC ? seq.length - (j + 3) : i,
                   end: isRC ? seq.length - i : j + 3,
                   length: len,
                   sequence: sub,
-                  protein: translateORF(sub)
+                  protein: protein + (functions.length > 0 ? ` [${functions.join(', ')}]` : '')
                 });
               }
               i = j; break;
@@ -692,17 +714,28 @@ export async function runBrowserAnalysis(
   let finalLoss = 0;
   let currentAccuracy = 0;
   let bestValLoss = Infinity;
+  let dynamicLR = LEARNING_RATE;
 
   for (let epoch = 0; epoch < EPOCHS; epoch++) {
     let epochLoss = 0;
+    let divDetected = false;
+
     for (const idx of trainIndices) {
       forwardNetwork(layers, allVectors[idx]);
-      const loss = backpropNetwork(layers, allLabels[idx], LEARNING_RATE, momentum);
-      if (isNaN(loss)) {
-        console.warn('AI Stability Alert: NaN loss detected. Halting training and using baseline.');
-        epoch = EPOCHS; break;
+      const loss = backpropNetwork(layers, allLabels[idx], dynamicLR, momentum);
+      if (isNaN(loss) || !isFinite(loss)) {
+        divDetected = true;
+        break;
       }
       epochLoss += loss;
+    }
+    
+    if (divDetected) {
+      console.warn(`Epoch ${epoch}: Divergence detected. Rolling back and reducing LR.`);
+      restoreWeights(layers, bestWeights);
+      dynamicLR *= 0.5;
+      if (dynamicLR < 1e-7) break;
+      continue;
     }
     
     let valCorrect = 0;
@@ -715,12 +748,14 @@ export async function runBrowserAnalysis(
     const denom = valIndices.length * 4;
     valLoss = denom > 0 ? (valLoss / denom) : 1.0;
     
-    if (valLoss < bestValLoss && !isNaN(valLoss)) {
+    if (valLoss < bestValLoss && !isNaN(valLoss) && isFinite(valLoss)) {
       bestValLoss = valLoss;
       bestWeights = serializeWeights(layers);
       currentAccuracy = valIndices.length > 0 ? (valCorrect / valIndices.length) : 0;
+    } else if (epoch > 5) {
+      dynamicLR *= 0.95; // Decay LR on plateau
     }
-    finalLoss = isNaN(valLoss) ? 1.0 : valLoss;
+    finalLoss = (isNaN(valLoss) || !isFinite(valLoss)) ? 1.0 : valLoss;
   }
 
   restoreWeights(layers, bestWeights);
