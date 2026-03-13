@@ -222,9 +222,16 @@ export function cloneWeights(layers: DenseLayer[]) {
 
 export function restoreWeights(layers: DenseLayer[], saved: any) {
   for (let l = 0; l < layers.length; l++) {
-    layers[l].biases = new Float64Array(saved.biases[l]);
-    layers[l].weights = saved.weights[l].map((w: number[]) => new Float64Array(w));
+    layers[l].biases = new Float64Array(Object.values(saved.biases[l]));
+    layers[l].weights = saved.weights[l].map((w: any) => new Float64Array(Object.values(w)));
   }
+}
+
+export function serializeWeights(layers: DenseLayer[]) {
+  return {
+    weights: layers.map(l => l.weights.map(w => Array.from(w))),
+    biases: layers.map(l => Array.from(l.biases)),
+  };
 }
 
 // ─── Bio & Stats Logic ───
@@ -299,16 +306,17 @@ function findORFs(seq: string): ORF[] {
  */
 export async function runBrowserAnalysis(
   sequence: string, 
-  trainingData: { vectors: number[][], labels: number[][] }
-): Promise<AnalysisResult> {
+  trainingData: { vectors: number[][], labels: number[][] },
+  initialWeights?: any
+): Promise<{ result: AnalysisResult; weights: any }> {
   const seq = sequence.toUpperCase().replace(/[^ATGC]/g, '');
   const K5 = 5;
   const K6 = 6;
   const HIDDEN_1 = 64;
   const HIDDEN_2 = 32;
   const HIDDEN_3 = 16;
-  const EPOCHS = 20;
-  const LEARNING_RATE = 0.01;
+  const EPOCHS = initialWeights ? 10 : 20; // Fewer epochs if continuing from state
+  const LEARNING_RATE = initialWeights ? 0.005 : 0.01; // Slower learning if continuing
 
   // 1. Statistical Analysis
   const length = seq.length;
@@ -369,6 +377,14 @@ export async function runBrowserAnalysis(
     createLayer(HIDDEN_3, 4, 'sigmoid'),
   ];
 
+  if (initialWeights) {
+    try {
+      restoreWeights(layers, initialWeights);
+    } catch (e) {
+      console.warn('Could not restore DNA state, re-initializing...', e);
+    }
+  }
+
   const momentum = createMomentumBuffer(layers);
   let bestValLoss = Infinity;
   let bestWeights = cloneWeights(layers);
@@ -410,36 +426,39 @@ export async function runBrowserAnalysis(
   const riskLevelIdx = pathogenicProb < 0.25 ? 0 : pathogenicProb < 0.5 ? 1 : pathogenicProb < 0.75 ? 2 : 3;
 
   return {
-    sequenceLength: length,
-    gcContent,
-    atContent: 100 - gcContent,
-    baseComposition: { A: counts.A, T: counts.T, G: counts.G, C: counts.C },
-    pathogenicProbability: pathogenicProb,
-    riskLevel: riskLevels[riskLevelIdx],
-    riskScore,
-    geneticVariationRisk: { score: gvScore, level: gvScore < 30 ? 'safe' : gvScore < 70 ? 'moderate' : 'high', description: 'Structural variation potential' },
-    mutationFrequencyRisk: { score: mfScore, level: mfScore < 30 ? 'safe' : mfScore < 70 ? 'moderate' : 'high', description: 'Predicted point mutation rate' },
-    deletionRisk: { score: delScore, level: delScore < 30 ? 'safe' : delScore < 70 ? 'moderate' : 'high', description: 'Susceptibility to structural loss' },
-    safeRegions: Math.max(0, 100 - riskScore),
-    moderateRiskRegions: Math.floor(riskScore * 0.4),
-    highRiskRegions: Math.ceil(riskScore * 0.6),
-    trainingMetrics: { epochs: EPOCHS, finalLoss, bestLoss: bestValLoss, accuracy: currentAccuracy },
-    kmerStats: { 
-      uniqueKmers5: kmer5Counts.size, 
-      uniqueKmers6: kmer6Counts.size, 
-      totalKmers: length - K5 + 1, 
-      topKmers: Array.from(kmer5Counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([kmer,count])=>({kmer,count})),
-      shannonEntropy: entropy 
+    result: {
+      sequenceLength: length,
+      gcContent,
+      atContent: 100 - gcContent,
+      baseComposition: { A: counts.A, T: counts.T, G: counts.G, C: counts.C },
+      pathogenicProbability: pathogenicProb,
+      riskLevel: riskLevels[riskLevelIdx],
+      riskScore,
+      geneticVariationRisk: { score: gvScore, level: gvScore < 30 ? 'safe' : gvScore < 70 ? 'moderate' : 'high', description: 'Structural variation potential' },
+      mutationFrequencyRisk: { score: mfScore, level: mfScore < 30 ? 'safe' : mfScore < 70 ? 'moderate' : 'high', description: 'Predicted point mutation rate' },
+      deletionRisk: { score: delScore, level: delScore < 30 ? 'safe' : delScore < 70 ? 'moderate' : 'high', description: 'Susceptibility to structural loss' },
+      safeRegions: Math.max(0, 100 - riskScore),
+      moderateRiskRegions: Math.floor(riskScore * 0.4),
+      highRiskRegions: Math.ceil(riskScore * 0.6),
+      trainingMetrics: { epochs: EPOCHS, finalLoss, bestLoss: bestValLoss, accuracy: currentAccuracy },
+      kmerStats: { 
+        uniqueKmers5: kmer5Counts.size, 
+        uniqueKmers6: kmer6Counts.size, 
+        totalKmers: length - K5 + 1, 
+        topKmers: Array.from(kmer5Counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([kmer,count])=>({kmer,count})),
+        shannonEntropy: entropy 
+      },
+      biologicalMetrics: {
+        orfs,
+        startCodons,
+        stopCodons,
+        polyRegions,
+        repetitivePatterns,
+        complexity,
+        codingRegionPct: codingPct
+      },
+      qualityScore: Math.min(99.9, Math.round((entropy / 10 * 40 + (1 - pathogenicProb) * 60) * 10) / 10),
     },
-    biologicalMetrics: {
-      orfs,
-      startCodons,
-      stopCodons,
-      polyRegions,
-      repetitivePatterns,
-      complexity,
-      codingRegionPct: codingPct
-    },
-    qualityScore: Math.min(99.9, Math.round((entropy / 10 * 40 + (1 - pathogenicProb) * 60) * 10) / 10),
+    weights: serializeWeights(layers)
   };
 }

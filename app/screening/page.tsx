@@ -12,6 +12,7 @@ import { db } from '@/lib/firebase';
 import { ref, push } from 'firebase/database';
 import { toast } from 'sonner';
 import { runBrowserAnalysis, AnalysisResult as DNNAnalysisResult } from '@/lib/dnn-engine';
+import { useEffect } from 'react';
 
 const SAMPLE_SEQUENCE = `ATGGCTAAACCAACTCTATCTGTGCTTCAACAATTGAACAGCAACTGTGCTTCCCTATGGATAGCTTTTGTAATGAAATATCTGCTGGTTCTACTAGCGAATCCAGGCCCTGGATTGCCTATCTGTGCTTCAACAATTGAACAGCAACTGTGCTTCCCTATGGATAGCTTTTG`;
 
@@ -21,6 +22,18 @@ export default function ScreeningPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<DNNAnalysisResult | null>(null);
   const [apiMeta, setApiMeta] = useState<any>(null);
+  const [modelState, setModelState] = useState<any>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('dna_model_state');
+    if (saved) {
+      try {
+        setModelState(JSON.parse(saved));
+      } catch (e) {
+        console.warn('Failed to parse model state');
+      }
+    }
+  }, []);
 
   const handleAnalyze = async () => {
     if (!sequence.trim()) return;
@@ -33,13 +46,16 @@ export default function ScreeningPage() {
       if (!dataResponse.ok) throw new Error('Failed to load authentic training data');
       const trainingData = await dataResponse.json();
 
-      const result = await runBrowserAnalysis(sequence.trim(), trainingData);
+      const { result, weights } = await runBrowserAnalysis(sequence.trim(), trainingData, modelState);
 
       setAnalysisResult(result);
+      setModelState(weights);
+      localStorage.setItem('dna_model_state', JSON.stringify(weights));
+
       setApiMeta({
         engine: 'Multi-Task Deep Neural Network',
         architecture: 'Input(1024) → 64 → 32 → 16 → Output(4)',
-        note: 'Trained on 3,000 live samples from NCBI database.'
+        note: modelState ? 'Continuous learning enabled (state restored).' : 'Initial training session.',
       });
 
       // Save to Firebase
@@ -119,6 +135,15 @@ export default function ScreeningPage() {
             </button>
           </div>
         </div>
+
+        {modelState && !analyzed && (
+          <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-center gap-3 animate-pulse">
+            <Zap className="w-5 h-5 text-indigo-400" />
+            <p className="text-sm font-medium text-indigo-300">
+              Persistent Model State Detected: The engine will continue learning from its previous condition.
+            </p>
+          </div>
+        )}
 
         {/* Input Card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
