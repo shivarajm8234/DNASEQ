@@ -250,7 +250,7 @@ function calculateShannonEntropy(counts: Map<string, number>, total: number): nu
 function detectPolyRegions(seq: string) {
   const bases = ['A', 'T', 'G', 'C'];
   return bases.map(b => {
-    const re = new RegExp(`${b}{4,}`, 'g');
+    const re = new RegExp(`${b}{5,}`, 'g');
     const matches = seq.match(re) || [];
     return {
       base: b,
@@ -280,14 +280,16 @@ function detectRepetitivePatterns(seq: string) {
 }
 
 const GENOME_FINGERPRINTS = [
-  { name: 'Homo sapiens', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC', 'GCTAG', 'CATGC', 'ATGCC', 'TGGCA', 'GGCAT', 'TTCAG'], risk: 'safe' },
-  { name: 'Escherichia coli', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA', 'AAATT', 'TTTAA', 'AATTA', 'GCCGC', 'CGGCG'], risk: 'safe' },
-  { name: 'Bacillus subtilis', type: 'Bacteria', motifs: ['AACAA', 'TTGTT', 'AACAA', 'GGCTC', 'CCGAG'], risk: 'safe' },
-  { name: 'Saccharomyces cerevisiae', type: 'Fungi', motifs: ['TATAA', 'TTATA', 'AATAA', 'ATATA', 'TATAT', 'AAAAA', 'TTTTT'], risk: 'safe' },
-  { name: 'SARS-CoV-2 (Variant)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT', 'GTACA', 'TGTAG', 'TTAAA', 'CGTTT'], risk: 'pathogen' },
-  { name: 'Influenza A Virus', type: 'Virus', motifs: ['GGGTG', 'CACCC', 'TGGGT', 'GTGGG', 'CCACG', 'AGTTC', 'AAAAA'], risk: 'pathogen' },
-  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT', 'GTTTT', 'AAAAA', 'GGGGG', 'CCCCC'], risk: 'pathogen' },
-  { name: 'Ebola Virus', type: 'Virus', motifs: ['AGAGG', 'GGAGA', 'AAGAG', 'TCTCC', 'CCTCT', 'TTCTT', 'AAAAA'], risk: 'pathogen' },
+  { name: 'Homo sapiens (Human)', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC', 'GCTAG', 'CATGC', 'ATGCC', 'TGGCA', 'GGCAT', 'TTCAG', 'GCCCC'], risk: 'safe' },
+  { name: 'Escherichia coli', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA', 'AAATT', 'TTTAA', 'AATTA', 'GCCGC', 'CGGCG', 'ATTGC'], risk: 'safe' },
+  { name: 'Bacillus subtilis', type: 'Bacteria', motifs: ['AACAA', 'TTGTT', 'AACAA', 'GGCTC', 'CCGAG', 'TGAAC', 'CAAGT'], risk: 'safe' },
+  { name: 'Saccharomyces cerevisiae', type: 'Fungi', motifs: ['TATAA', 'TTATA', 'AATAA', 'ATATA', 'TATAT', 'AAAAA', 'TTTTT', 'ATATT'], risk: 'safe' },
+  { name: 'Arabidopsis thaliana', type: 'Plant', motifs: ['CCTTT', 'AAAGG', 'TTTCC', 'GGAAA', 'AATTC', 'GAATT'], risk: 'safe' },
+  { name: 'SARS-CoV-2 (Viral)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT', 'GTACA', 'TGTAG', 'TTAAA', 'CGTTT', 'AAATT'], risk: 'pathogen' },
+  { name: 'Influenza A', type: 'Virus', motifs: ['GGGTG', 'CACCC', 'TGGGT', 'GTGGG', 'CCACG', 'AGTTC', 'AAAAA', 'CTTTT'], risk: 'pathogen' },
+  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT', 'GTTTT', 'AAAAA', 'GGGGG', 'CCCCC', 'ATGCG'], risk: 'pathogen' },
+  { name: 'Ebola Virus', type: 'Virus', motifs: ['AGAGG', 'GGAGA', 'AAGAG', 'TCTCC', 'CCTCT', 'TTCTT', 'AAAAA', 'GGGGG'], risk: 'pathogen' },
+  { name: 'Marburg Virus', type: 'Virus', motifs: ['AAGAA', 'TTCTT', 'AAGAA', 'CGTGC', 'GCACG'], risk: 'pathogen' },
 ];
 
 function identifyOrganism(kmerCounts: Map<string, number>) {
@@ -335,12 +337,14 @@ function findORFs(seq: string): ORF[] {
 
   function scan(s: string, isReverse: boolean) {
     for (let frame = 0; frame < 3; frame++) {
-      for (let i = frame; i <= s.length - 3; i += 3) {
+      let i = frame;
+      while (i <= s.length - 3) {
         if (s.substring(i, i + 3) === startCodon) {
+          let foundStop = false;
           for (let j = i + 3; j <= s.length - 3; j += 3) {
             if (stopCodons.includes(s.substring(j, j + 3))) {
               const length = j + 3 - i;
-              if (length >= 45) { // Minimum biologically significant length
+              if (length >= 60) { // Standard min length for viable ORF
                 orfs.push({
                   start: isReverse ? seq.length - (j + 3) : i,
                   end: isReverse ? seq.length - i : j + 3,
@@ -348,10 +352,14 @@ function findORFs(seq: string): ORF[] {
                   sequence: s.substring(i, j + 3)
                 });
               }
-              i = j;
+              i = j + 3; // Move past this stop codon
+              foundStop = true;
               break;
             }
           }
+          if (!foundStop) i += 3; // No stop found in this frame
+        } else {
+          i += 3;
         }
       }
     }
@@ -512,29 +520,24 @@ export async function runBrowserAnalysis(
 
   const riskLevels: ('safe' | 'ambiguous' | 'suspicious' | 'pathogen-like')[] = ['safe', 'ambiguous', 'suspicious', 'pathogen-like'];
   
-  // Decisive Thresholding & Biological Priority
-  let riskLevelIdx = 0; 
-  if (pathogenicProb < 0.35) {
-    riskLevelIdx = 0; // Safe Range
-  } else if (pathogenicProb < 0.65) {
-    riskLevelIdx = 1; // Ambiguous Range
-  } else if (pathogenicProb < 0.85) {
-    riskLevelIdx = 2; // Suspicious Range
-  } else {
-    riskLevelIdx = 3; // Threat Range
+  // Strict Regulatory Thresholding
+  let riskLevelIdx = 0;
+  if (pathogenicProb < 0.25) riskLevelIdx = 0;
+  else if (pathogenicProb < 0.50) riskLevelIdx = 1;
+  else if (pathogenicProb < 0.75) riskLevelIdx = 2;
+  else riskLevelIdx = 3;
+
+  // Final Synthetic/Pathogen Overrides
+  if (entropy < 1.5 || complexity === 'low') {
+    // Flag as Synthetic/Suspicious
+    riskLevelIdx = Math.max(riskLevelIdx, 2);
   }
 
-  // Biological Evidence Overlays
-  if (identifiedOrganism.confidence > 0.3) {
+  if (identifiedOrganism.confidence > 0.45) {
     const finger = GENOME_FINGERPRINTS.find(f => f.name === identifiedOrganism.name);
-    if (finger?.risk === 'pathogen') riskLevelIdx = Math.max(riskLevelIdx, 2);
-    if (finger?.risk === 'safe' && pathogenicProb < 0.5) riskLevelIdx = 0;
+    if (finger?.risk === 'pathogen') riskLevelIdx = 3;
+    if (finger?.risk === 'safe' && pathogenicProb < 0.4) riskLevelIdx = 0;
   }
-
-  if (complexity === 'low') riskLevelIdx = Math.max(riskLevelIdx, 1); 
-  if (entropy < 2.0) riskLevelIdx = 2; // High suspicion for extremely low entropy (synthetic)
-  
-  if (riskLevelIdx === 1 && pathogenicProb > 0.5) riskLevelIdx = 2; // Nudge ambiguous towards suspicious if prob is high
 
   return {
     result: {
@@ -570,7 +573,7 @@ export async function runBrowserAnalysis(
         mutations: realMutations,
         identifiedOrganism: identifiedOrganism
       },
-      qualityScore: Math.min(99.9, Math.round((entropy / 10 * 40 + (1 - pathogenicProb) * 60) * 10) / 10),
+      qualityScore: Math.round(((entropy / 10 * 30 + (1 - pathogenicProb) * 50 + (codingPct / 100) * 20) * 100) / 10) / 10,
     },
     weights: serializeWeights(layers)
   };
