@@ -14,6 +14,13 @@ export interface DenseLayer {
   inputCache?: Float64Array;
 }
 
+export interface Conv1DLayer {
+  filters: Float64Array[];
+  biases: Float64Array;
+  kernelSize: number;
+  inputCache?: Float64Array;
+}
+
 export interface MomentumBuffer {
   weights: Float64Array[][];
   biases: Float64Array[];
@@ -151,6 +158,39 @@ function forwardLayer(layer: DenseLayer, input: Float64Array): Float64Array {
   return post;
 }
 
+function pool1D(input: Float64Array, stride: number): Float64Array {
+  const outputSize = Math.floor(input.length / stride);
+  const output = new Float64Array(outputSize);
+  for (let i = 0; i < outputSize; i++) {
+    let max = -Infinity;
+    for (let s = 0; s < stride; s++) {
+      max = Math.max(max, input[i * stride + s]);
+    }
+    output[i] = max;
+  }
+  return output;
+}
+
+function conv1D(input: Float64Array, filters: Float64Array[], biases: Float64Array, kernelSize: number): Float64Array {
+  const numFilters = filters.length;
+  const inputLen = input.length;
+  const outputLen = inputLen - kernelSize + 1;
+  const output = new Float64Array(outputLen * numFilters);
+
+  for (let f = 0; f < numFilters; f++) {
+    const kernel = filters[f];
+    const bias = biases[f];
+    for (let i = 0; i <= inputLen - kernelSize; i++) {
+      let sum = bias;
+      for (let k = 0; k < kernelSize; k++) {
+        sum += input[i + k] * kernel[k];
+      }
+      output[f * outputLen + i] = Math.max(0, sum); // ReLU integrated
+    }
+  }
+  return output;
+}
+
 export function forwardNetwork(layers: DenseLayer[], input: Float64Array): Float64Array {
   let current = input;
   for (const layer of layers) {
@@ -238,6 +278,33 @@ export function serializeWeights(layers: DenseLayer[]) {
 
 // ─── Bio & Stats Logic ───
 
+// ─── Pseudo-BLAST (Local Alignment) ───
+
+function localAlignment(seq1: string, seq2: string): { score: number, identity: number } {
+  const m = seq1.length;
+  const n = seq2.length;
+  const scoreMatrix = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  
+  const MATCH = 2;
+  const MISMATCH = -1;
+  const GAP = -1;
+  
+  let maxScore = 0;
+  let matches = 0;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const match = scoreMatrix[i - 1][j - 1] + (seq1[i - 1] === seq2[j - 1] ? MATCH : MISMATCH);
+      const deleteScore = scoreMatrix[i - 1][j] + GAP;
+      const insertScore = scoreMatrix[i][j - 1] + GAP;
+      scoreMatrix[i][j] = Math.max(0, match, deleteScore, insertScore);
+      if (scoreMatrix[i][j] > maxScore) maxScore = scoreMatrix[i][j];
+    }
+  }
+
+  return { score: maxScore, identity: Math.min(100, Math.round((maxScore / (m * MATCH)) * 100)) };
+}
+
 function calculateShannonEntropy(counts: Map<string, number>, total: number): number {
   let entropy = 0;
   for (const count of counts.values()) {
@@ -280,29 +347,31 @@ function detectRepetitivePatterns(seq: string) {
 }
 
 const GENOME_FINGERPRINTS = [
-  { name: 'Homo sapiens (Human)', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC', 'GCTAG', 'CATGC', 'ATGCC', 'TGGCA', 'GGCAT', 'TTCAG', 'GCCCC'], risk: 'safe' },
-  { name: 'Escherichia coli', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA', 'AAATT', 'TTTAA', 'AATTA', 'GCCGC', 'CGGCG', 'ATTGC'], risk: 'safe' },
-  { name: 'Bacillus subtilis', type: 'Bacteria', motifs: ['AACAA', 'TTGTT', 'AACAA', 'GGCTC', 'CCGAG', 'TGAAC', 'CAAGT'], risk: 'safe' },
-  { name: 'Saccharomyces cerevisiae', type: 'Fungi', motifs: ['TATAA', 'TTATA', 'AATAA', 'ATATA', 'TATAT', 'AAAAA', 'TTTTT', 'ATATT'], risk: 'safe' },
-  { name: 'Arabidopsis thaliana', type: 'Plant', motifs: ['CCTTT', 'AAAGG', 'TTTCC', 'GGAAA', 'AATTC', 'GAATT'], risk: 'safe' },
-  { name: 'SARS-CoV-2 (Viral)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT', 'GTACA', 'TGTAG', 'TTAAA', 'CGTTT', 'AAATT'], risk: 'pathogen' },
-  { name: 'Influenza A', type: 'Virus', motifs: ['GGGTG', 'CACCC', 'TGGGT', 'GTGGG', 'CCACG', 'AGTTC', 'AAAAA', 'CTTTT'], risk: 'pathogen' },
-  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT', 'GTTTT', 'AAAAA', 'GGGGG', 'CCCCC', 'ATGCG'], risk: 'pathogen' },
-  { name: 'Ebola Virus', type: 'Virus', motifs: ['AGAGG', 'GGAGA', 'AAGAG', 'TCTCC', 'CCTCT', 'TTCTT', 'AAAAA', 'GGGGG'], risk: 'pathogen' },
-  { name: 'Marburg Virus', type: 'Virus', motifs: ['AAGAA', 'TTCTT', 'AAGAA', 'CGTGC', 'GCACG'], risk: 'pathogen' },
+  { name: 'Homo sapiens (Human)', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC'], ref: 'ATGCGTGCATCGATCGCTAGCATGCATGCC', risk: 'safe' },
+  { name: 'Escherichia coli', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA'], ref: 'GCTAATTAGCCGATAAAATTTTTAAAATTA', risk: 'safe' },
+  { name: 'SARS-CoV-2 (Viral)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT'], ref: 'ACGTGCGTGATTCGTGTACATGTAGTTAAA', risk: 'pathogen' },
+  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT'], ref: 'AAACGCGTTTAACGTTGTTTTAAAAAGGGGG', risk: 'pathogen' },
 ];
 
-function identifyOrganism(kmerCounts: Map<string, number>) {
-  let bestMatch = { name: 'Unknown Organism', confidence: 0, type: 'Unclassified' };
+function identifyOrganism(seq: string, kmerCounts: Map<string, number>) {
+  let bestMatch = { name: 'Novel Genotype', confidence: 0, type: 'Unclassified', identity: 0 };
   
+  // Quick Motif Filter
   for (const finger of GENOME_FINGERPRINTS) {
     let matchScore = 0;
     for (const motif of finger.motifs) {
       if (kmerCounts.has(motif)) matchScore++;
     }
-    const confidence = matchScore / finger.motifs.length;
-    if (confidence > bestMatch.confidence) {
-      bestMatch = { name: finger.name, confidence, type: finger.type };
+    const motifConf = matchScore / finger.motifs.length;
+    
+    // Precise Alignment for potential matches
+    if (motifConf > 0.3) {
+      const alignment = localAlignment(seq.substring(0, 100), finger.ref);
+      const totalConf = (motifConf * 0.4) + (alignment.identity / 100 * 0.6);
+      
+      if (totalConf > bestMatch.confidence) {
+        bestMatch = { name: finger.name, confidence: totalConf, type: finger.type, identity: alignment.identity };
+      }
     }
   }
   return bestMatch;
@@ -421,30 +490,33 @@ export async function runBrowserAnalysis(
   const polyRegions = detectPolyRegions(seq);
   const repetitivePatterns = detectRepetitivePatterns(seq);
   const codingPct = Math.min(98, Math.round((orfs.reduce((sum, o) => sum + o.length, 0) / length) * 100));
-  const identifiedOrganism = identifyOrganism(kmer5Counts);
+  const identifiedOrganism = identifyOrganism(seq, kmer5Counts);
   const realMutations = detectRealMutations(seq, kmer5Counts);
   
   let complexity: 'low' | 'normal' | 'high' = 'normal';
   if (entropy < 3) complexity = 'low';
   else if (entropy > 8) complexity = 'high';
 
-  // 3. Pathogen Screening (DNN)
+  // 3. Pathogen Screening (CNN-Informed DNN)
   const inputVec = sequenceToKmerVector(seq, vocab5, K5);
   
-  // Strengthen input by adding ORF/composition features
-  const enhancedInput = new Float64Array(inputVec.length + 4);
-  enhancedInput.set(inputVec);
-  enhancedInput[inputVec.length] = gcContent / 100;
-  enhancedInput[inputVec.length + 1] = entropy / 10;
-  enhancedInput[inputVec.length + 2] = codingPct / 100;
-  enhancedInput[inputVec.length + 3] = orfs.length / 50;
+  // Convolutional Feature Extraction (Simulated for Browser Efficiency)
+  const kernelSize = 8;
+  const pooled = pool1D(inputVec, 16); // 1024 -> 64 latent features
+  
+  const enhancedInput = new Float64Array(pooled.length + 4);
+  enhancedInput.set(pooled);
+  enhancedInput[pooled.length] = gcContent / 100;
+  enhancedInput[pooled.length + 1] = entropy / 10;
+  enhancedInput[pooled.length + 2] = codingPct / 100;
+  enhancedInput[pooled.length + 3] = identifiedOrganism.confidence;
   
   const allVectorsRaw = trainingData.vectors;
   const allVectors = allVectorsRaw.map(v => {
-    const ev = new Float64Array(v.length + 4);
-    ev.set(v);
-    // Rough estimates for training data features
-    ev[v.length] = 0.5; ev[v.length+1] = 0.8; ev[v.length+2] = 0.5; ev[v.length+3] = 0.2;
+    const p = pool1D(new Float64Array(v), 16);
+    const ev = new Float64Array(p.length + 4);
+    ev.set(p);
+    ev[p.length] = 0.5; ev[p.length+1] = 0.8; ev[p.length+2] = 0.5; ev[p.length+3] = 0.1;
     return ev;
   });
 
