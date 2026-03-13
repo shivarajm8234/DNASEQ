@@ -54,7 +54,7 @@ export default function ScreeningPage() {
 
       setApiMeta({
         engine: 'Multi-Task Deep Neural Network',
-        architecture: 'Input(1024) → 64 → 32 → 16 → Output(4)',
+        architecture: 'Seq-CNN → Dense(64) → Dense(32) → Dense(16) → Output(4)',
         note: modelState ? 'Continuous learning enabled (state restored).' : 'Initial training session.',
       });
 
@@ -62,19 +62,23 @@ export default function ScreeningPage() {
       try {
         const reportData = {
           name: `Analysis_${new Date().getTime().toString().slice(-6)}`,
-          sequence: sequence.substring(0, 500),
-          length: result.sequenceLength,
-          riskScore: result.riskScore,
-          pathogenicProb: result.pathogenicProbability,
-          riskLevel: result.riskLevel,
+          date: new Date().toLocaleDateString(),
+          status: 'completed',
+          score: result.riskScore,
+          sampleType: 'Whole Genome Fragment',
+          sequenceLength: result.sequenceLength,
+          mutations: result.biologicalMetrics.mutations.length,
+          gcContent: result.gcContent,
           timestamp: new Date().toISOString(),
-          metrics: {
-            gc: result.gcContent,
-            entropy: result.kmerStats.shannonEntropy,
-            accuracy: result.trainingMetrics.accuracy,
-            signatures: result.biologicalMetrics.signatures.length,
-            organism: result.biologicalMetrics.identifiedOrganism.name
-          }
+          pathogenicProbability: result.pathogenicProbability,
+          dnnMetrics: {
+            epochs: result.trainingMetrics.epochs,
+            finalLoss: result.trainingMetrics.finalLoss,
+            bestLoss: result.trainingMetrics.bestLoss,
+            accuracy: result.trainingMetrics.accuracy
+          },
+          biologicalMetrics: result.biologicalMetrics,
+          kmerStats: result.kmerStats
         };
         await push(ref(db, 'reports'), reportData);
       } catch (e) {

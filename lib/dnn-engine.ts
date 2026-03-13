@@ -712,13 +712,15 @@ export async function runBrowserAnalysis(
       if ((preds[0] > 0.5) === (allLabels[idx][0] > 0.5)) valCorrect++;
       for(let j=0; j<4; j++) valLoss += Math.pow(preds[j] - allLabels[idx][j], 2);
     }
-    valLoss /= (valIndices.length * 4);
-    if (valLoss < bestValLoss) {
+    const denom = valIndices.length * 4;
+    valLoss = denom > 0 ? (valLoss / denom) : 1.0;
+    
+    if (valLoss < bestValLoss && !isNaN(valLoss)) {
       bestValLoss = valLoss;
       bestWeights = serializeWeights(layers);
-      currentAccuracy = valCorrect / valIndices.length;
+      currentAccuracy = valIndices.length > 0 ? (valCorrect / valIndices.length) : 0;
     }
-    finalLoss = valLoss;
+    finalLoss = isNaN(valLoss) ? 1.0 : valLoss;
   }
 
   restoreWeights(layers, bestWeights);
