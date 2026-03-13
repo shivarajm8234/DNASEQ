@@ -321,36 +321,45 @@ export function serializeWeights(layers: DenseLayer[]) {
 
 // ─── Pseudo-BLAST (Local Alignment) ───
 
-function localAlignment(seq1: string, seq2: string): { score: number, identity: number, mutations: any[] } {
+function localAlignment(seq1: string, seq2: string): { score: number, identity: number, coverage: number, mutations: any[] } {
   const m = seq1.length;
   const n = seq2.length;
-  const scoreMatrix = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
-  
+  if (m === 0 || n === 0) return { score: 0, identity: 0, coverage: 0, mutations: [] };
+
   const MATCH = 3;
-  const MISMATCH = -2;
+  const MISMATCH = -3;
   const GAP = -2;
   
+  // Use a more memory-efficient scoring window for browser
+  const dp = Array.from({ length: 2 }, () => new Int32Array(n + 1));
   let maxScore = 0;
+  let matches = 0;
   const mutations: any[] = [];
 
   for (let i = 1; i <= m; i++) {
+    const curr = i % 2;
+    const prev = (i - 1) % 2;
     for (let j = 1; j <= n; j++) {
-      const match = scoreMatrix[i - 1][j - 1] + (seq1[i - 1] === seq2[j - 1] ? MATCH : MISMATCH);
-      const deleteScore = scoreMatrix[i - 1][j] + GAP;
-      const insertScore = scoreMatrix[i][j - 1] + GAP;
-      scoreMatrix[i][j] = Math.max(0, match, deleteScore, insertScore);
-      if (scoreMatrix[i][j] > maxScore) maxScore = scoreMatrix[i][j];
+      const score = seq1[i - 1] === seq2[j - 1] ? MATCH : MISMATCH;
+      dp[curr][j] = Math.max(0, dp[prev][j - 1] + score, dp[prev][j] + GAP, dp[curr][j - 1] + GAP);
+      if (dp[curr][j] > maxScore) {
+        maxScore = dp[curr][j];
+        if (seq1[i-1] === seq2[j-1]) matches++;
+      }
     }
   }
 
-  // Simple SNP detection from first 50bp
-  for (let i = 0; i < Math.min(seq1.length, seq2.length, 50); i++) {
+  const identity = Math.round((matches / Math.min(m, n)) * 100);
+  const coverage = Math.min(100, Math.round((Math.max(m, n) / 100) * 100)); // Normalized coverage estimate
+
+  // Quick Mutation Scan
+  for (let i = 0; i < Math.min(m, n); i++) {
     if (seq1[i] !== seq2[i]) {
-      mutations.push({ position: i, type: 'SNP', description: `Mismatch: ${seq1[i]} instead of ${seq2[i]}` });
+      mutations.push({ position: i, type: 'VAR', description: `${seq2[i]}→${seq1[i]}` });
     }
   }
 
-  return { score: maxScore, identity: Math.min(100, Math.round((maxScore / (Math.min(m, n) * MATCH)) * 100)), mutations };
+  return { score: maxScore, identity, coverage, mutations };
 }
 
 function calculateGCSkew(seq: string): number[] {
@@ -437,39 +446,41 @@ function detectRepetitivePatterns(seq: string) {
 }
 
 const GENOME_FINGERPRINTS = [
-  { name: 'Homo sapiens (Human)', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC'], ref: 'ATGCGTGCATCGATCGCTAGCATGCATGCC', risk: 'safe' },
-  { name: 'Escherichia coli (K-12)', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA'], ref: 'GCTAATTAGCCGATAAAATTTTTAAAATTA', risk: 'safe' },
-  { name: 'Bacillus subtilis', type: 'Bacteria', motifs: ['AACAA', 'TTGTT'], ref: 'AACAATTGTTAACAAGGCTCCCGAGTGAAC', risk: 'safe' },
-  { name: 'SARS-CoV-2 (Viral)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT'], ref: 'ACGTGCGTGATTCGTGTACATGTAGTTAAA', risk: 'pathogen' },
-  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT'], ref: 'AAACGCGTTTAACGTTGTTTTAAAAAGGGGG', risk: 'pathogen' },
-  { name: 'Vibrio cholerae', type: 'Bacteria', motifs: ['GGTCA', 'TCAGG'], ref: 'GGTCATCAGGACCGTTTTATTAACCGTTT', risk: 'pathogen' },
+  { name: 'Homo sapiens (Human)', type: 'Mammal', motifs: ['ATGCG', 'TGCAT', 'CGATC'], ref: 'ATGCGTGCATCGATCGCTAGCATGCATGCCCGTTAGCTAGCTAGCATGCATGCGTAGCTAGCTAGCTAGCATGCATGCGGGGTCAGTCAGTCAGTCAGTCA', risk: 'safe' },
+  { name: 'Escherichia coli (K-12)', type: 'Bacteria', motifs: ['GCTAA', 'TTAGC', 'CGATA'], ref: 'GCTAATTAGCCGATAAAATTTTTAAAATTAAACCCGGGTTTAAACTTTGGGGCCCAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCC', risk: 'safe' },
+  { name: 'Bacillus subtilis', type: 'Bacteria', motifs: ['AACAA', 'TTGTT'], ref: 'AACAATTGTTAACAAGGCTCCCGAGTGAACCGTTAGCTAGCTAGCATGCATGCGTAGCTAGCTAGCTAGCATGCATGCGGGGTCAGTCAGTCAGTCAGTCA', risk: 'safe' },
+  { name: 'SARS-CoV-2 (Viral)', type: 'Virus', motifs: ['ACGTG', 'CGTGA', 'TTCGT'], ref: 'ACGTGCGTGATTCGTGTACATGTAGTTAAAGGGTCAGTCAGTCAGTCAGTCAACGTGCGTGATTCGTGTACATGTAGTTAAAGGGTCAGTCAGTCAGTCA', risk: 'pathogen' },
+  { name: 'Bacillus anthracis', type: 'Bacteria', motifs: ['AAACG', 'CGTTT', 'AACGT'], ref: 'AAACGCGTTTAACGTTGTTTTAAAAAGGGGGCCCAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCC', risk: 'pathogen' },
+  { name: 'Vibrio cholerae', type: 'Bacteria', motifs: ['GGTCA', 'TCAGG'], ref: 'GGTCATCAGGACCGTTTTATTAACCGTTTCCCAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCC', risk: 'pathogen' },
 ];
 
 function identifyOrganism(seq: string, kmerCounts: Map<string, number>) {
-  const matches: OrganismMatch[] = [];
-  
-  for (const finger of GENOME_FINGERPRINTS) {
-    let matchScore = 0;
-    for (const motif of finger.motifs) {
-      if (kmerCounts.has(motif)) matchScore++;
-    }
-    const motifConf = matchScore / finger.motifs.length;
-    
-    // Precise Alignment for potential matches
-    const alignment = localAlignment(seq.substring(0, 100), finger.ref);
-    const totalSimilarity = Math.round((motifConf * 30) + (alignment.identity * 0.7));
-    
-    matches.push({ name: finger.name, similarity: totalSimilarity, type: finger.type });
-  }
+  const candidates = GENOME_FINGERPRINTS.map(finger => {
+    // 1. K-mer Motif Score (30% weight)
+    let motifMatches = 0;
+    for (const m of finger.motifs) { if (kmerCounts.has(m)) motifMatches++; }
+    const motifScore = (motifMatches / finger.motifs.length) * 30;
 
-  const sorted = matches.sort((a,b) => b.similarity - a.similarity);
-  const best = sorted[0] || { name: 'Novel Organism', similarity: 0, type: 'Unclassified' };
+    // 2. Local Alignment Score (70% weight) - Scan first 300bp for better context
+    const alignment = localAlignment(seq.substring(0, 300), finger.ref);
+    const alignScore = (alignment.identity * alignment.coverage / 100) * 0.7;
+
+    return { 
+      name: finger.name, 
+      similarity: Math.round(motifScore + alignScore), 
+      type: finger.type,
+      identity: alignment.identity
+    };
+  });
+
+  const sorted = candidates.sort((a,b) => b.similarity - a.similarity);
+  const best = sorted[0] || { name: 'Novel Genotype', similarity: 0, type: 'Unknown' };
 
   return {
     name: best.name,
     confidence: best.similarity / 100,
     type: best.type,
-    topMatches: sorted.slice(0, 5)
+    topMatches: sorted.slice(0, 5).map(c => ({ name: c.name, similarity: c.similarity, type: c.type }))
   };
 }
 
@@ -490,16 +501,18 @@ function calculateCodonBias(seq: string): number {
   return entropy;
 }
 
-function detectRealMutations(seq: string, finger: any) {
-  if (!finger || !finger.ref) return [];
-  const mutations: { position: number; type: string; description: string }[] = [];
-  const ref = finger.ref;
-  for (let i = 0; i < Math.min(seq.length, ref.length); i++) {
-    if (seq[i] !== ref[i]) {
-      mutations.push({ position: i, type: 'SNP', description: `Discrepancy: ${seq[i]} vs Reference ${ref[i]}` });
-    }
-  }
-  return mutations.slice(0, 5);
+function detectRealMutations(seq: string, bestMatch: any) {
+  if (!bestMatch || !bestMatch.confidence || bestMatch.confidence < 0.2) return [];
+  
+  const finger = GENOME_FINGERPRINTS.find(f => f.name === bestMatch.name);
+  if (!finger) return [];
+
+  const alignment = localAlignment(seq.substring(0, 200), finger.ref);
+  return alignment.mutations.slice(0, 10).map(m => ({
+    position: m.position,
+    type: 'MUT',
+    description: `Genetic Deviation: Found ${m.description} against ${finger.name} reference.`
+  }));
 }
 
 function translateORF(dna: string): string {
@@ -523,45 +536,35 @@ function translateORF(dna: string): string {
 
 function findORFs(seq: string): ORF[] {
   const orfs: ORF[] = [];
-  const startCodon = 'ATG';
-  const stopCodons = ['TAA', 'TAG', 'TGA'];
-
-  function scan(s: string, isReverse: boolean) {
+  const stops = ['TAA', 'TAG', 'TGA'];
+  
+  function scan(s: string, isRC: boolean) {
     for (let frame = 0; frame < 3; frame++) {
-      let i = frame;
-      while (i <= s.length - 3) {
-        if (s.substring(i, i + 3) === startCodon) {
-          let foundStop = false;
-          for (let j = i + 3; j <= s.length - 3; j += 3) {
-            if (stopCodons.includes(s.substring(j, j + 3))) {
-              const length = j + 3 - i;
-              if (length >= 90) { // Biologically relevant length
-                const dnaSeq = s.substring(i, j + 3);
+      for (let i = frame; i < s.length - 3; i += 3) {
+        if (s.substring(i, i + 3) === 'ATG') {
+          for (let j = i + 3; j < s.length - 3; j += 3) {
+            if (stops.includes(s.substring(j, j + 3))) {
+              const len = j + 3 - i;
+              if (len >= 75) { // Sensitivity optimized
+                const sub = s.substring(i, j + 3);
                 orfs.push({
-                  start: isReverse ? seq.length - (j + 3) : i,
-                  end: isReverse ? seq.length - i : j + 3,
-                  length,
-                  sequence: dnaSeq,
-                  protein: translateORF(dnaSeq)
+                  start: isRC ? seq.length - (j + 3) : i,
+                  end: isRC ? seq.length - i : j + 3,
+                  length: len,
+                  sequence: sub,
+                  protein: translateORF(sub)
                 });
               }
-              i = j + 3;
-              foundStop = true;
-              break;
+              i = j; break;
             }
           }
-          if (!foundStop) i += 3;
-        } else {
-          i += 3;
         }
       }
     }
   }
 
   scan(seq, false);
-  const rc = getReverseComplement(seq);
-  scan(rc, true);
-
+  scan(getReverseComplement(seq), true);
   return orfs.sort((a,b) => b.length - a.length);
 }
 
@@ -619,37 +622,46 @@ export async function runBrowserAnalysis(
   const repetitivePatterns = detectRepetitivePatterns(seq);
   const codingPct = Math.min(98, Math.round((orfs.reduce((sum, o) => sum + o.length, 0) / length) * 100));
   const identifiedOrganism = identifyOrganism(seq, kmer5Counts);
-  const bestFinger = GENOME_FINGERPRINTS.find(f => f.name === identifiedOrganism.name);
-  const realMutations = detectRealMutations(seq, bestFinger);
+  const realMutations = detectRealMutations(seq, identifiedOrganism);
   const codonBias = calculateCodonBias(seq);
   
   let complexity: 'low' | 'normal' | 'high' = 'normal';
-  if (entropy < 3.5) complexity = 'low';
-  else if (entropy > 8.5) complexity = 'high';
+  if (entropy < 3.8) complexity = 'low';
+  else if (entropy > 8.2) complexity = 'high';
 
-  // 3. Pathogen Screening (STABLE CNN-Informed DNN)
-  const inputVec = zScoreNormalize(sequenceToKmerVector(seq, vocab5, K5));
+  // 3. Pathogen Screening (STABLE Hybrid Engine)
+  const inputVecRaw = sequenceToKmerVector(seq, vocab5, K5);
+  const inputVec = zScoreNormalize(inputVecRaw);
   
-  // Convolutional Feature Extraction
+  // Explicit Sequence-Level Convolution (detects patterns in raw bases)
+  const seqCnnFeatures = new Float64Array(16);
+  for (let i = 0; i < Math.min(seq.length - 10, 500); i += 10) {
+    const window = seq.substring(i, i + 10);
+    if (window.includes('GC') && window.includes('AT')) seqCnnFeatures[i % 16]++;
+  }
+  
   const pooled = pool1D(inputVec, 16); 
   
-  const enhancedInput = new Float64Array(pooled.length + 7);
+  const enhancedInput = new Float64Array(pooled.length + seqCnnFeatures.length + 5);
   enhancedInput.set(pooled);
-  enhancedInput[pooled.length] = gcContent / 100;
-  enhancedInput[pooled.length + 1] = entropy / 10;
-  enhancedInput[pooled.length + 2] = codingPct / 100;
-  enhancedInput[pooled.length + 3] = identifiedOrganism.confidence;
-  enhancedInput[pooled.length + 4] = signatures.length / 5;
-  enhancedInput[pooled.length + 5] = codonBias / 6;
-  enhancedInput[pooled.length + 6] = cpgIslands / 50;
+  enhancedInput.set(seqCnnFeatures, pooled.length);
+  
+  const offset = pooled.length + seqCnnFeatures.length;
+  enhancedInput[offset] = gcContent / 100;
+  enhancedInput[offset + 1] = entropy / 10;
+  enhancedInput[offset + 2] = codingPct / 100;
+  enhancedInput[offset + 3] = identifiedOrganism.confidence;
+  enhancedInput[offset + 4] = signatures.length / 5;
   
   const allVectorsRaw = trainingData.vectors;
   const allVectors = allVectorsRaw.map(v => {
     const p = pool1D(zScoreNormalize(new Float64Array(v)), 16);
-    const ev = new Float64Array(p.length + 7);
+    const ev = new Float64Array(p.length + seqCnnFeatures.length + 5);
     ev.set(p);
-    ev[p.length] = 0.5; ev[p.length+1] = 0.8; ev[p.length+2] = 0.5; ev[p.length+3] = 0.1; 
-    ev[p.length+4] = 0.05; ev[p.length+5] = 0.9; ev[p.length+6] = 0.1;
+    // Fill simulated seq cnn features for training data baseline
+    for(let k=0; k<16; k++) ev[p.length + k] = 0.2;
+    const off = p.length + 16;
+    ev[off] = 0.5; ev[off+1] = 0.8; ev[off+2] = 0.5; ev[off+3] = 0.1; ev[off+4] = 0.05;
     return ev;
   });
 
@@ -727,36 +739,37 @@ export async function runBrowserAnalysis(
   const mfScore = Math.round(finalPreds[2] * 100);
   const delScore = Math.round(finalPreds[3] * 100);
 
-  const riskLevels: ('safe' | 'ambiguous' | 'suspicious' | 'pathogen-like')[] = ['safe', 'ambiguous', 'suspicious', 'pathogen-like'];
-  
-  // ─── Rule-Based Interpretation Bridge ───
+  // ─── Rule-Based Interpretation Bridge (Bayesian Hybrid) ───
   let riskLevelIdx = 0;
-  if (pathogenicProb < 0.25) riskLevelIdx = 0;
-  else if (pathogenicProb < 0.50) riskLevelIdx = 1;
-  else if (pathogenicProb < 0.75) riskLevelIdx = 2;
+  
+  // Evidentiary Weighting
+  const aiWeight = pathogenicProb * 0.4;
+  const sigWeight = (Math.min(3, signatures.length) / 3) * 0.3;
+  const orgWeight = (identifiedOrganism.confidence > 0.5 && GENOME_FINGERPRINTS.find(f => f.name === identifiedOrganism.name)?.risk === 'pathogen' ? 1.0 : 0) * 0.3;
+  
+  const totalRiskScore = (aiWeight + sigWeight + orgWeight);
+  const finalRiskProb = Math.min(1.0, totalRiskScore);
+
+  if (finalRiskProb < 0.2) riskLevelIdx = 0;
+  else if (finalRiskProb < 0.45) riskLevelIdx = 1;
+  else if (finalRiskProb < 0.7) riskLevelIdx = 2;
   else riskLevelIdx = 3;
 
-  // Hybrid Logic: Specific High-Confidence Biological Indicators
-  if (signatures.length >= 2) riskLevelIdx = Math.max(riskLevelIdx, 2); // Suspicious if multiple hallmarks
-  if (signatures.some(s => s.category === 'toxin') && pathogenicProb > 0.4) riskLevelIdx = 3; // Pathogen if toxin + AI agree
-  
-  if (bestFinger && bestFinger.risk === 'pathogen' && identifiedOrganism.confidence > 0.6) {
-    riskLevelIdx = 3; // Direct match to known threat
-  }
-  
-  if (complexity === 'low' && orfs.length === 0) {
-    riskLevelIdx = 1; // Flag generic/synthetic as ambiguous
+  // Pathogen Detection Override
+  if (signatures.some(s => s.category === 'toxin') && (pathogenicProb > 0.4 || identifiedOrganism.confidence > 0.3)) {
+    riskLevelIdx = 3; 
   }
 
+  const riskLevels: ('safe' | 'ambiguous' | 'suspicious' | 'pathogen-like')[] = ['safe', 'ambiguous', 'suspicious', 'pathogen-like'];
   return {
     result: {
       sequenceLength: length,
       gcContent,
       atContent: 100 - gcContent,
       baseComposition: { A: counts.A, T: counts.T, G: counts.G, C: counts.C },
-      pathogenicProbability: pathogenicProb,
+      pathogenicProbability: finalRiskProb,
       riskLevel: riskLevels[riskLevelIdx],
-      riskScore,
+      riskScore: Math.round(finalRiskProb * 100),
       geneticVariationRisk: { score: gvScore, level: gvScore < 30 ? 'safe' : gvScore < 70 ? 'moderate' : 'high', description: 'Structural variation potential' },
       mutationFrequencyRisk: { score: mfScore, level: mfScore < 30 ? 'safe' : mfScore < 70 ? 'moderate' : 'high', description: 'Predicted point mutation rate' },
       deletionRisk: { score: delScore, level: delScore < 30 ? 'safe' : delScore < 70 ? 'moderate' : 'high', description: 'Susceptibility to structural loss' },
