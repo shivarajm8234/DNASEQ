@@ -71,7 +71,9 @@ export default function ScreeningPage() {
           metrics: {
             gc: result.gcContent,
             entropy: result.kmerStats.shannonEntropy,
-            accuracy: result.trainingMetrics.accuracy
+            accuracy: result.trainingMetrics.accuracy,
+            signatures: result.biologicalMetrics.signatures.length,
+            organism: result.biologicalMetrics.identifiedOrganism.name
           }
         };
         await push(ref(db, 'reports'), reportData);
@@ -249,14 +251,17 @@ export default function ScreeningPage() {
                     <div className="space-y-4">
                       <div className="text-center py-4">
                         <div className="text-2xl font-black text-foreground">{analysisResult.biologicalMetrics.identifiedOrganism.name}</div>
-                        <div className="text-xs font-bold text-muted-foreground uppercase mt-1">{analysisResult.biologicalMetrics.identifiedOrganism.type}</div>
+                        <div className="text-[10px] font-bold text-muted-foreground uppercase mt-1">SIMILARITY: {(analysisResult.biologicalMetrics.identifiedOrganism.confidence * 100).toFixed(1)}%</div>
                       </div>
-                      <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
-                        <span className="text-xs font-bold text-muted-foreground">Confidence</span>
-                        <span className="text-sm font-black text-primary">{(analysisResult.biologicalMetrics.identifiedOrganism.confidence * 100).toFixed(1)}%</span>
-                      </div>
-                      <div className="text-[10px] leading-relaxed text-muted-foreground italic">
-                        * BLAST-like k-mer fingerprinting used for identification.
+                      
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Top Candidate Matches</h4>
+                        {analysisResult.biologicalMetrics.identifiedOrganism.topMatches.map((match, i) => (
+                          <div key={i} className="flex items-center justify-between p-2 bg-secondary/30 rounded-lg border border-border/50 text-[10px]">
+                            <span className="font-bold text-foreground truncate max-w-[100px]">{match.name}</span>
+                            <span className="font-black text-primary">{match.similarity}%</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -272,14 +277,11 @@ export default function ScreeningPage() {
                         analysisResult.biologicalMetrics.orfs.slice(0, 15).map((orf, i) => (
                           <div key={i} className="p-3 bg-secondary/30 rounded-xl border border-border flex items-center justify-between group hover:border-green-500/50 transition-colors">
                             <div className="flex items-center gap-3">
-                              <div className="p-2 bg-green-500/10 rounded-lg text-[10px] font-black text-green-400">ORF</div>
+                              <div className="p-2 bg-green-500/10 rounded-lg text-[10px] font-black text-green-400">FRAME</div>
                               <div>
-                                <div className="text-xs font-black text-foreground">POS: {orf.start}..{orf.end}</div>
-                                <div className="text-[10px] font-mono text-muted-foreground truncate max-w-lg">{orf.sequence}</div>
+                                <div className="text-xs font-black text-foreground">POS: {orf.start}..{orf.end} ({orf.length} BP)</div>
+                                <div className="text-[9px] font-mono text-muted-foreground bg-secondary/20 p-1 mt-1 rounded border border-border/30 max-w-xl break-all">AA: {orf.protein || 'N/A'}</div>
                               </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-xs font-black text-green-400">{orf.length} BP</div>
                             </div>
                           </div>
                         ))
@@ -302,6 +304,51 @@ export default function ScreeningPage() {
                    <div className="text-2xl font-black uppercase">{analysisResult.biologicalMetrics.complexity}</div>
                 </div>
               </div>
+            </section>
+
+            {/* Pathogen Signatures & Signatures */}
+            <section id="signatures" className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+               <div className="space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-red-500/20 rounded-lg"><Target className="w-6 h-6 text-red-400" /></div>
+                    <h2 className="text-2xl font-bold text-foreground">Pathogen Hallmark Signatures</h2>
+                  </div>
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-xl space-y-4">
+                     {analysisResult.biologicalMetrics.signatures.length > 0 ? (
+                       analysisResult.biologicalMetrics.signatures.map((sig, i) => (
+                         <div key={i} className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl flex items-start gap-4">
+                            <div className="p-2 bg-red-500/10 rounded-lg"><Microscope className="w-4 h-4 text-red-400" /></div>
+                            <div>
+                               <div className="text-sm font-black text-red-400 uppercase tracking-tighter">{sig.name}</div>
+                               <div className="text-xs font-medium text-muted-foreground mb-1">{sig.description}</div>
+                               <div className="text-[10px] font-mono font-bold text-red-500/50 uppercase">Position: {sig.pos} bp</div>
+                            </div>
+                         </div>
+                       ))
+                     ) : (
+                       <div className="py-8 text-center text-muted-foreground italic text-sm">No high-threat virulence hallmarks detected.</div>
+                     )}
+                  </div>
+               </div>
+
+               <div className="space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-yellow-500/20 rounded-lg"><BarChart3 className="w-6 h-6 text-yellow-400" /></div>
+                    <h2 className="text-2xl font-bold text-foreground">Regulatory Elements (CpG/Skew)</h2>
+                  </div>
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-xl flex flex-col justify-center h-[260px]">
+                      <div className="grid grid-cols-2 gap-8 text-center">
+                          <div>
+                             <div className="text-3xl font-black text-foreground">{analysisResult.kmerStats.cpgIslands}</div>
+                             <div className="text-[10px] font-black uppercase text-muted-foreground mt-2 tracking-widest">CpG Island Density</div>
+                          </div>
+                          <div>
+                             <div className="text-3xl font-black text-foreground">{(analysisResult.kmerStats.gcSkew.reduce((a,b)=>a+b,0)/analysisResult.kmerStats.gcSkew.length).toFixed(4)}</div>
+                             <div className="text-[10px] font-black uppercase text-muted-foreground mt-2 tracking-widest">Mean GC Skew</div>
+                          </div>
+                      </div>
+                  </div>
+               </div>
             </section>
 
             {/* Mutation Analysis Table */}
