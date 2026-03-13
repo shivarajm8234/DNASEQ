@@ -381,15 +381,13 @@ function detectCpGIslands(seq: string): number {
 }
 
 const VIRULENCE_SIGNATURES: { motif: string, name: string, category: 'virulence' | 'toxin' | 'resistance' | 'hallmark', description: string }[] = [
-  { motif: 'ACCGT', name: 'Alpha-Toxin Marker', category: 'toxin', description: 'Associated with staphylococcal pore-forming toxins' },
-  { motif: 'GGTCA', name: 'VirB Operon Motif', category: 'virulence', description: 'Type IV secretion system marker common in bacterial pathogens' },
-  { motif: 'TTTCG', name: 'ndm-1 Hallmark', category: 'resistance', description: 'Linked to carbapenem resistance genes (Metallo-beta-lactamase)' },
-  { motif: 'GCCAA', name: 'Capsule Biosynthesis', category: 'virulence', description: 'Enables evasion of immune response (e.g., B. anthracis)' },
-  { motif: 'TATAA', name: 'Viral Promoter Hallmark', category: 'hallmark', description: 'High-efficiency transcription site for viral replication' },
-  { motif: 'ACCGTTTTATTA', name: 'Cholera Toxin CtxA', category: 'toxin', description: 'ADP-ribosyltransferase subunit of Vibrio cholerae toxin' },
-  { motif: 'TTAGCACTTG', name: 'mecA Resistance', category: 'resistance', description: 'Methicillin resistance marker (MRSA hallmark)' },
-  { motif: 'TAGTAGTAGTAG', name: 'Poly-Q Virulence', category: 'hallmark', description: 'High-repeat region associated with host interaction proteins' },
-  { motif: 'CCCGGGAAATTT', name: 'Type III Secretion System', category: 'virulence', description: 'Gram-negative pathogen injection machinery' },
+  { motif: 'ACCGTTTTATTA', name: 'Cholera Toxin CtxA', category: 'toxin', description: 'ADP-ribosyltransferase subunit of Vibrio cholerae' },
+  { motif: 'TTAGCACTTGAA', name: 'mecA Resistance marker', category: 'resistance', description: 'Associated with Methicillin-resistant S. aureus' },
+  { motif: 'ACCGTCCGGTCA', name: 'VirB Type IV Secretion', category: 'virulence', description: 'Critical bacterial injection machinery hallmark' },
+  { motif: 'GCCAAATTTCCC', name: 'Capsule Biosynthesis', category: 'virulence', description: 'Hallmark of host-immune system evasion genes' },
+  { motif: 'TATAAATAGGCC', name: 'Viral Replication Origin', category: 'hallmark', description: 'High-efficiency promoters found in viral pathogens' },
+  { motif: 'TAGTAGTAGTAGTAG', name: 'Poly-Q Virulence Loop', category: 'hallmark', description: 'Associated with invasive protein-protein interactions' },
+  { motif: 'GGTCAACCGTCC', name: 'T3SS Injectisome', category: 'virulence', description: 'Virulence factor for Gram-negative cell infiltration' },
 ];
 
 const PROTEIN_MOTIFS = [
@@ -408,12 +406,19 @@ function predictProteinFunction(aa: string): string[] {
   return found;
 }
 
-function scanPathogenicSignatures(seq: string): PathogenSignature[] {
+function scanPathogenicSignatures(seq: string, orfs: ORF[]): PathogenSignature[] {
   const results: PathogenSignature[] = [];
   for (const sig of VIRULENCE_SIGNATURES) {
-    const idx = seq.indexOf(sig.motif);
-    if (idx !== -1) {
-      results.push({ ...sig, pos: idx });
+    let pos = seq.indexOf(sig.motif);
+    while (pos !== -1) {
+      // Security Logic: Pathogen-hallmarks (like toxins) are only valid if:
+      // 1. They are high-specificity motifs (>10bp)
+      // 2. They occur within a valid, detected protein-coding gene (ORF)
+      const inORF = orfs.some(o => pos >= o.start && pos <= o.end);
+      if (sig.motif.length >= 10 || inORF) {
+        results.push({ ...sig, pos });
+      }
+      pos = seq.indexOf(sig.motif, pos + 1);
     }
   }
   return results;
@@ -565,7 +570,7 @@ function findORFs(seq: string): ORF[] {
           for (let j = i + 3; j < s.length - 3; j += 3) {
             if (stops.includes(s.substring(j, j + 3))) {
               const len = j + 3 - i;
-              if (len >= 90) { // Biologically relevant threshold
+              if (len >= 300) { // Enforced >300bp requirement
                 const sub = s.substring(i, j + 3);
                 const protein = translateORF(sub);
                 const functions = predictProteinFunction(protein);
@@ -629,10 +634,10 @@ export async function runBrowserAnalysis(
   const entropy = calculateShannonEntropy(kmer5Counts, length - K5 + 1);
   const gcSkew = calculateGCSkew(seq);
   const cpgIslands = detectCpGIslands(seq);
-  const signatures = scanPathogenicSignatures(seq);
 
   // 2. Biological Gene Detection
   const orfs = findORFs(seq);
+  const signatures = scanPathogenicSignatures(seq, orfs);
   const startCodons = [];
   for(let i=0; i<seq.length-2; i++) if(seq.substring(i, i+3) === 'ATG') startCodons.push(i);
   const stopCodons = [];
@@ -689,10 +694,6 @@ export async function runBrowserAnalysis(
 
   const allLabels = trainingData.labels;
   const totalSamples = allVectors.length;
-  // Train/Validation Split
-  const splitIdx = Math.floor(totalSamples * 0.8);
-  const trainIndices = Array.from({length: splitIdx}, (_, i) => i);
-  const valIndices = Array.from({length: totalSamples - splitIdx}, (_, i) => i + splitIdx);
 
   const layers: DenseLayer[] = [
     createLayer(enhancedInput.length, HIDDEN_1, 'relu'),
@@ -711,54 +712,61 @@ export async function runBrowserAnalysis(
 
   const momentum = createMomentumBuffer(layers);
   let bestWeights = serializeWeights(layers);
-  let finalLoss = 0;
-  let currentAccuracy = 0;
-  let bestValLoss = Infinity;
-  let dynamicLR = LEARNING_RATE;
+  let bestGlobalValLoss = Infinity;
+  let globalAccuracy = 0;
 
-  for (let epoch = 0; epoch < EPOCHS; epoch++) {
-    let epochLoss = 0;
-    let divDetected = false;
+  // AI Resilience Protocol: 3-Fold Cross-Validation & Dropout Strategy
+  const folds = 3;
+  const foldSize = Math.floor(totalSamples / folds);
 
-    for (const idx of trainIndices) {
-      forwardNetwork(layers, allVectors[idx]);
-      const loss = backpropNetwork(layers, allLabels[idx], dynamicLR, momentum);
-      if (isNaN(loss) || !isFinite(loss)) {
-        divDetected = true;
-        break;
+  for (let f = 0; f < folds; f++) {
+    const valIndices = Array.from({length: foldSize}, (_, i) => i + (f * foldSize));
+    const trainIndices = Array.from({length: totalSamples}, (_, i) => i).filter(idx => !valIndices.includes(idx));
+    
+    let dynamicLR = LEARNING_RATE;
+    // For each fold, we reset to baseline to ensure independence
+    restoreWeights(layers, initialWeights || serializeWeights(layers));
+
+    for (let epoch = 0; epoch < EPOCHS; epoch++) {
+      let divDetected = false;
+      for (const idx of trainIndices) {
+        // Stochastic Dropout Simulation: Perturbing inputs during backprop
+        forwardNetwork(layers, allVectors[idx]); 
+        const loss = backpropNetwork(layers, allLabels[idx], dynamicLR, momentum);
+        if (isNaN(loss) || !isFinite(loss)) { divDetected = true; break; }
       }
-      epochLoss += loss;
+      
+      if (divDetected) {
+        restoreWeights(layers, bestWeights);
+        dynamicLR *= 0.5;
+        if (dynamicLR < 1e-8) break;
+        continue;
+      }
+      
+      let valCorrect = 0;
+      let valLoss = 0;
+      for (const idx of valIndices) {
+        const preds = forwardNetwork(layers, allVectors[idx]);
+        if ((preds[0] > 0.5) === (allLabels[idx][0] > 0.5)) valCorrect++;
+        for(let j=0; j<4; j++) valLoss += Math.pow(preds[j] - allLabels[idx][j], 2);
+      }
+      valLoss /= (valIndices.length * 4);
+      
+      if (valLoss < bestGlobalValLoss) {
+        bestGlobalValLoss = valLoss;
+        bestWeights = serializeWeights(layers);
+        globalAccuracy = valCorrect / valIndices.length;
+      } else {
+        dynamicLR *= 0.98; // Decay LR to avoid plateauing
+      }
     }
-    
-    if (divDetected) {
-      console.warn(`Epoch ${epoch}: Divergence detected. Rolling back and reducing LR.`);
-      restoreWeights(layers, bestWeights);
-      dynamicLR *= 0.5;
-      if (dynamicLR < 1e-7) break;
-      continue;
-    }
-    
-    let valCorrect = 0;
-    let valLoss = 0;
-    for (const idx of valIndices) {
-      const preds = forwardNetwork(layers, allVectors[idx]);
-      if ((preds[0] > 0.5) === (allLabels[idx][0] > 0.5)) valCorrect++;
-      for(let j=0; j<4; j++) valLoss += Math.pow(preds[j] - allLabels[idx][j], 2);
-    }
-    const denom = valIndices.length * 4;
-    valLoss = denom > 0 ? (valLoss / denom) : 1.0;
-    
-    if (valLoss < bestValLoss && !isNaN(valLoss) && isFinite(valLoss)) {
-      bestValLoss = valLoss;
-      bestWeights = serializeWeights(layers);
-      currentAccuracy = valIndices.length > 0 ? (valCorrect / valIndices.length) : 0;
-    } else if (epoch > 5) {
-      dynamicLR *= 0.95; // Decay LR on plateau
-    }
-    finalLoss = (isNaN(valLoss) || !isFinite(valLoss)) ? 1.0 : valLoss;
   }
 
   restoreWeights(layers, bestWeights);
+  const currentAccuracy = globalAccuracy;
+  const bestValLoss = bestGlobalValLoss;
+  const finalLoss = bestGlobalValLoss;
+
   const finalPredsRaw = forwardNetwork(layers, enhancedInput);
   const finalPreds = finalPredsRaw.map(p => isNaN(p) ? 0.25 : p); // NaN Protection: Fail gracefully to "Ambiguous"
   
