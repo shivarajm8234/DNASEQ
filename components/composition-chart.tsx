@@ -8,16 +8,16 @@ interface CompositionChartProps {
 
 export function CompositionChart({ data }: CompositionChartProps) {
   const chartColors = {
-    grid: '#404860',
-    axis: '#8090a0',
-    bar: '#4db8ff',
-    cardBg: '#1a2332',
-    border: '#404860',
-    text: '#e0e0e0',
+    grid: 'rgba(255, 255, 255, 0.05)',
+    axis: 'rgba(255, 255, 255, 0.4)',
+    bar: 'var(--primary)',
+    cardBg: 'rgba(15, 23, 42, 0.9)',
+    border: 'rgba(255, 255, 255, 0.1)',
+    text: '#ffffff',
   };
 
   return (
-    <div className="bg-card rounded-lg border border-border p-6">
+    <div className="bg-card/40 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-xl">
       <h3 className="font-semibold text-lg text-foreground mb-4">Base Composition</h3>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>

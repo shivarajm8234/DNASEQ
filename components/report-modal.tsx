@@ -23,6 +23,11 @@ interface Report {
     bestLoss: number;
     accuracy: number;
   };
+  biologicalMetrics?: {
+    orfs: { start: number; end: number; length: number; protein?: string }[];
+    signatures: { name: string; position?: number; pos?: number; description: string }[];
+    [key: string]: any;
+  };
 }
 
 interface ReportModalProps {
@@ -168,6 +173,51 @@ export function ReportModal({ isOpen, report, onClose }: ReportModalProps) {
                     <p className="text-[10px] text-blue-400 uppercase tracking-tighter mb-1">Epochs</p>
                     <p className="text-lg font-bold text-blue-300">{report.dnnMetrics.epochs}</p>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Biological Metrics (ORFs and Signatures) */}
+            {report.biologicalMetrics && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="font-semibold text-foreground mb-4">Detected Open Reading Frames</h3>
+                  {report.biologicalMetrics.orfs && report.biologicalMetrics.orfs.length > 0 ? (
+                    <div className="space-y-3 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                      {report.biologicalMetrics.orfs.map((orf, i) => (
+                        <div key={i} className="bg-secondary rounded-lg p-3 text-sm border border-border">
+                          <div className="flex justify-between font-medium mb-1">
+                            <span className="text-primary">Frame POS: {orf.start}..{orf.end}</span>
+                            <span className="text-muted-foreground">{orf.length} bp</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground break-all bg-background/50 p-2 rounded">
+                            AA: {orf.protein || 'N/A'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">No standard ORFs detected.</p>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-foreground mb-4">Pathogen Hallmark Signatures</h3>
+                  {report.biologicalMetrics.signatures && report.biologicalMetrics.signatures.length > 0 ? (
+                    <div className="space-y-3 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                      {report.biologicalMetrics.signatures.map((sig, i) => (
+                        <div key={i} className="bg-error/10 border border-error/20 rounded-lg p-3 text-sm">
+                          <div className="flex justify-between font-medium mb-1">
+                            <span className="text-error">{sig.name}</span>
+                            <span className="text-error/70 text-xs uppercase tracking-wider">POS: {sig.pos ?? sig.position ?? 'Unknown'} bp</span>
+                          </div>
+                          <p className="text-xs text-error/80">{sig.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">No high-threat virulence hallmarks detected.</p>
+                  )}
                 </div>
               </div>
             )}

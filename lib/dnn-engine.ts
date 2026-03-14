@@ -570,7 +570,7 @@ function findORFs(seq: string): ORF[] {
           for (let j = i + 3; j < s.length - 3; j += 3) {
             if (stops.includes(s.substring(j, j + 3))) {
               const len = j + 3 - i;
-              if (len >= 300) { // Enforced >300bp requirement
+              if (len >= 30) { // Lowered limit to detect ORFs in small sample sequences
                 const sub = s.substring(i, j + 3);
                 const protein = translateORF(sub);
                 const functions = predictProteinFunction(protein);

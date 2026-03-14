@@ -43,8 +43,9 @@ export function DNAScannerModal({ isOpen }: { isOpen: boolean }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-card rounded-xl border border-border p-8 max-w-md w-full mx-4 animate-scale-in shadow-2xl">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] animate-fade-in p-4">
+      <div className="bg-card/80 backdrop-blur-2xl rounded-3xl border border-white/10 p-8 max-w-md w-full animate-scale-in shadow-[0_0_100px_rgba(var(--primary),0.2)] relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
         {/* DNA Helix SVG */}
         <div className="flex justify-center mb-8">
           <svg

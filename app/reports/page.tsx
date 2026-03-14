@@ -21,6 +21,7 @@ interface Report {
   sequence?: string;
   fullSequence?: string;
   dnnMetrics?: any;
+  biologicalMetrics?: any;
 }
 
 const reports: Report[] = [
@@ -125,21 +126,21 @@ export default function ReportsPage() {
           <p className="text-lg text-muted-foreground">View and manage your screening analysis reports</p>
         </div>
 
-        <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="bg-card/50 backdrop-blur-xl rounded-2xl border border-border/50 shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                <p className="text-muted-foreground animate-pulse">Loading reports from database...</p>
+                <p className="text-muted-foreground animate-pulse font-medium">Loading reports from platform...</p>
               </div>
             ) : reports.length === 0 ? (
-              <div className="text-center py-20 text-muted-foreground">
-                No reports found in the database.
+              <div className="text-center py-20 text-muted-foreground font-medium">
+                No reports found in the database. Start by screening a sequence.
               </div>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border bg-secondary/50">
+                  <tr className="border-b border-border/50 bg-secondary/30 backdrop-blur-sm">
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Report Name</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Date</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Risk Score</th>
@@ -224,19 +225,19 @@ export default function ReportsPage() {
         </div>
 
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-card rounded-lg border border-border p-6">
-            <p className="text-sm text-muted-foreground mb-1">Total Reports</p>
-            <p className="text-3xl font-bold text-primary">{reports.length}</p>
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:-translate-y-1 transition-transform duration-300">
+            <p className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-1">Total Reports</p>
+            <p className="text-4xl font-black text-primary drop-shadow-sm">{reports.length}</p>
           </div>
-          <div className="bg-card rounded-lg border border-border p-6">
-            <p className="text-sm text-muted-foreground mb-1">Total Sequences</p>
-            <p className="text-3xl font-bold text-accent">
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:-translate-y-1 transition-transform duration-300">
+            <p className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-1">Total Sequences</p>
+            <p className="text-4xl font-black text-accent drop-shadow-sm">
               {(reports.reduce((acc, report) => acc + (report.sequenceLength || 0), 0) / 1000).toFixed(1)}K
             </p>
           </div>
-          <div className="bg-card rounded-lg border border-border p-6">
-            <p className="text-sm text-muted-foreground mb-1">Avg Score</p>
-            <p className="text-3xl font-bold text-success">
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:-translate-y-1 transition-transform duration-300">
+            <p className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-1">Avg Score</p>
+            <p className="text-4xl font-black text-success drop-shadow-sm">
               {reports.length > 0 ? (reports.reduce((acc, report) => acc + report.score, 0) / reports.length).toFixed(1) : '0'}%
             </p>
           </div>

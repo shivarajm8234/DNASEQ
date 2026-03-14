@@ -18,6 +18,7 @@ interface Report {
   gcContent: number;
   timestamp?: string;
   dnnMetrics?: any;
+  biologicalMetrics?: any;
 }
 
 export default function DashboardPage() {
@@ -82,56 +83,64 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-card rounded-lg border border-border p-6 hover:border-primary/50 transition-colors">
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:shadow-primary/5 hover:-translate-y-1 hover:border-primary/50 transition-all duration-300">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Active Analyses</p>
-                <p className="text-2xl font-bold text-foreground">{activeAnalyses}</p>
+                <p className="text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wider">Active Analyses</p>
+                <p className="text-3xl font-black text-foreground drop-shadow-sm">{activeAnalyses}</p>
               </div>
-              <Activity className="w-8 h-8 text-primary" />
+              <div className="p-2 bg-primary/10 rounded-xl">
+                <Activity className="w-6 h-6 text-primary" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Real-time tracking</p>
+            <p className="text-xs font-semibold text-primary/80">Real-time tracking</p>
           </div>
 
-          <div className="bg-card rounded-lg border border-border p-6 hover:border-accent/50 transition-colors">
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:shadow-accent/5 hover:-translate-y-1 hover:border-accent/50 transition-all duration-300">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Reports</p>
-                <p className="text-2xl font-bold text-foreground">{totalReports}</p>
+                <p className="text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wider">Total Reports</p>
+                <p className="text-3xl font-black text-foreground drop-shadow-sm">{totalReports}</p>
               </div>
-              <Users className="w-8 h-8 text-accent" />
+              <div className="p-2 bg-accent/10 rounded-xl">
+                <Users className="w-6 h-6 text-accent" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Processed sequences</p>
+            <p className="text-xs font-semibold text-muted-foreground">Processed sequences</p>
           </div>
 
-          <div className="bg-card rounded-lg border border-border p-6 hover:border-success/50 transition-colors">
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:shadow-success/5 hover:-translate-y-1 hover:border-success/50 transition-all duration-300">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Bases</p>
-                <p className="text-2xl font-bold text-foreground">{formattedTotalBases}</p>
+                <p className="text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wider">Total Bases</p>
+                <p className="text-3xl font-black text-foreground drop-shadow-sm">{formattedTotalBases}</p>
               </div>
-              <BarChart3 className="w-8 h-8 text-success" />
+              <div className="p-2 bg-success/10 rounded-xl">
+                <BarChart3 className="w-6 h-6 text-success" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Data volume analyzed</p>
+            <p className="text-xs font-semibold text-muted-foreground">Data volume analyzed</p>
           </div>
 
-          <div className="bg-card rounded-lg border border-border p-6 hover:border-warning/50 transition-colors">
+          <div className="bg-card/50 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:shadow-warning/5 hover:-translate-y-1 hover:border-warning/50 transition-all duration-300">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Avg Score</p>
-                <p className="text-2xl font-bold text-foreground">
+                <p className="text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wider">Avg Score</p>
+                <p className="text-3xl font-black text-foreground drop-shadow-sm">
                   {totalReports > 0 ? (reports.reduce((acc, r) => acc + r.score, 0) / totalReports).toFixed(1) : '0'}%
                 </p>
               </div>
-              <Clock className="w-8 h-8 text-warning" />
+              <div className="p-2 bg-warning/10 rounded-xl">
+                <Clock className="w-6 h-6 text-warning" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Mean risk level</p>
+            <p className="text-xs font-semibold text-warning/80">Mean risk level</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-card rounded-lg border border-border p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Recent Activity</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="bg-card/50 backdrop-blur-xl rounded-3xl border border-border/50 p-8 shadow-2xl">
+            <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2"><Activity className="w-5 h-5 text-primary" /> Recent Activity</h3>
             <div className="space-y-4">
               {reports.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No recent activity found.</p>
@@ -152,8 +161,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="bg-card rounded-lg border border-border p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Risk Summary</h3>
+          <div className="bg-card/50 backdrop-blur-xl rounded-3xl border border-border/50 p-8 shadow-2xl">
+            <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-accent" /> Risk Summary</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Safe (&lt;30)</span>

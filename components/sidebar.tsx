@@ -11,11 +11,11 @@ const navItems = [
   { href: '/about', label: 'About', icon: Info },
 ];
 
-export function Sidebar() {
+export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 border-r border-border bg-sidebar min-h-screen flex flex-col">
+    <aside className={`w-64 border-r border-border bg-sidebar/80 backdrop-blur-3xl min-h-full flex flex-col z-20 ${className || ''}`}>
       <div className="flex-1 px-4 py-8 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -24,22 +24,22 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
                 isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-1'
               }`}
             >
-              <Icon className="w-5 h-5" />
-              <span className="font-medium text-sm">{item.label}</span>
+              <Icon className={`w-5 h-5 transition-transform duration-500 ${isActive ? 'rotate-[360deg]' : 'group-hover:rotate-12'}`} />
+              <span className={`font-bold text-xs uppercase tracking-widest ${isActive ? 'animate-pulse' : ''}`}>{item.label}</span>
             </Link>
           );
         })}
       </div>
-      <div className="px-4 py-4 border-t border-sidebar-border">
-        <button className="flex items-center gap-3 px-4 py-3 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full text-left">
-          <Settings className="w-5 h-5" />
-          <span className="font-medium text-sm">Settings</span>
+      <div className="px-4 py-6 border-t border-sidebar-border/50">
+        <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-sidebar-foreground/60 hover:text-foreground hover:bg-sidebar-accent transition-all duration-300 w-full text-left group">
+          <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
+          <span className="font-bold text-xs uppercase tracking-widest">Settings</span>
         </button>
       </div>
     </aside>

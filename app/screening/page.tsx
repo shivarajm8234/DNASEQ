@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { runBrowserAnalysis, AnalysisResult as DNNAnalysisResult } from '@/lib/dnn-engine';
 import { useEffect } from 'react';
 
-const SAMPLE_SEQUENCE = `ATGGCTAAACCAACTCTATCTGTGCTTCAACAATTGAACAGCAACTGTGCTTCCCTATGGATAGCTTTTGTAATGAAATATCTGCTGGTTCTACTAGCGAATCCAGGCCCTGGATTGCCTATCTGTGCTTCAACAATTGAACAGCAACTGTGCTTCCCTATGGATAGCTTTTG`;
+const SAMPLE_SEQUENCE = `ATGGCTAAACCAACTCTATCTGTGCTTCAACAATTGAACAGCAACTGTGCTTCCCTATGGATAGCTTTTGTAATGAAATATCTGCTGGTTCTACTAGCGAATCCAGGCCCTGGATTGCCTATCTGTGCTTCAACAATTGAACAGCAACTGTGCTTCCCTATGGATAGCTTTTGACCGTTTTATTA`;
 
 export default function ScreeningPage() {
   const [sequence, setSequence] = useState(SAMPLE_SEQUENCE);
@@ -116,7 +116,7 @@ export default function ScreeningPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto space-y-8 pb-20">
+      <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-4xl font-extrabold text-foreground tracking-tight mb-2">Genomic Intelligence Platform</h1>
@@ -153,8 +153,8 @@ export default function ScreeningPage() {
 
         {/* Input Card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-card rounded-2xl border border-border shadow-xl overflow-hidden focus-within:border-primary/50 transition-colors">
-            <div className="px-6 py-4 border-b border-border bg-secondary/30 flex items-center justify-between">
+          <div className="lg:col-span-2 bg-card/60 backdrop-blur-md rounded-2xl border border-border/50 shadow-xl overflow-hidden focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+            <div className="px-6 py-4 border-b border-border/50 bg-secondary/30 flex items-center justify-between">
               <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                 <Binary className="w-4 h-4" /> DNA Sequence Input
               </span>
