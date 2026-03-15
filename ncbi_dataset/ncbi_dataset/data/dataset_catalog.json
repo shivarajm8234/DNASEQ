@@ -1,0 +1,37 @@
+{
+"apiVersion": "V2",
+"assemblies": [
+{
+  "files": [
+    {
+      "filePath": "data_report.jsonl",
+      "fileType": "DATA_REPORT",
+      "uncompressedLengthBytes": "33049880"
+    },
+    {
+      "filePath": "biosample_report.jsonl",
+      "fileType": "BIOSAMPLE_REPORT",
+      "uncompressedLengthBytes": "473633"
+    },
+    {
+      "filePath": "cds.fna",
+      "fileType": "CDS_NUCLEOTIDE_FASTA",
+      "uncompressedLengthBytes": "586783089"
+    },
+    {
+      "filePath": "genomic.fna",
+      "fileType": "GENOMIC_NUCLEOTIDE_FASTA",
+      "uncompressedLengthBytes": "580331644"
+    },
+    {
+      "filePath": "protein.faa",
+      "fileType": "PROTEIN_FASTA",
+      "uncompressedLengthBytes": "235637955"
+    },
+    {
+      "filePath": "virus_dataset.md",
+      "fileType": "README",
+      "uncompressedLengthBytes": "2431"
+    }
+  ]
+}]}

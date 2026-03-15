@@ -7,11 +7,11 @@ __v0_jsx-dev-runtime.ts
 node_modules/
 .next/
 out/
-ncbi_dataset/
-dna_classifier/
+# ncbi_dataset/
+# dna_classifier/
 venv/
-*.fna
-*.jsonl
-*.h5
+# *.fna
+# *.jsonl
+# *.h5
 .env*.local
 .DS_Store
