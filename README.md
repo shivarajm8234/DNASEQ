@@ -86,5 +86,38 @@ Upon completion, the system generates a multi-section dashboard containing:
 - **Organism Identification Card** with confidence scores.
 - **Final Risk Score**: (Safe / Synthetic / Suspicious / Pathogen-like).
 
+## 📊 Dataset & Resources
+
+This project includes a comprehensive genomic dataset and pre-trained models:
+
+### 1. NCBI Dataset
+- **Location**: `ncbi_dataset/`
+- **Contents**: Genomic sequences, CDS (Coding Sequences), and protein FASTA files sourced from NCBI.
+- **Archive**: `ncbi_dataset.zip` contains the full raw data.
+
+### 2. DNA Classifier (AI Training)
+- **Location**: `dna_classifier/`
+- **Contents**: 
+    - `train.py`: Script to train the risk assessment model.
+    - `preprocessing.py`: DNA to k-mer vectorization logic.
+    - `dna_risk_model.h5`: The pre-trained Deep Neural Network model.
+    - `training_accuracy.png` / `training_loss.png`: Performance visualizations.
+- **Archive**: `dna_classifier.zip` contains the logic and model (excluding virtual environments).
+
+## 🧠 Training the Model
+
+To retrain the AI engine with new data:
+
+```bash
+cd dna_classifier
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Run the training pipeline
+python train.py
+```
+
+The training process will generate an updated `dna_risk_model.h5` and visualization plots.
+
 ---
 **Privacy Notice**: All genomic analysis is performed locally on your device. DNA sequences never leave your browser.
