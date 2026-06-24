@@ -38,6 +38,30 @@ export default function AboutPage() {
           ))}
         </div>
 
+        {/* Applications Grid */}
+        <div className="space-y-8">
+          <h2 className="text-3xl font-black text-foreground flex items-center justify-center gap-3">
+            <div className="p-2 bg-accent text-accent-foreground rounded-xl"><Sparkles className="w-6 h-6" /></div>
+            Specific Applications
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { icon: Shield, title: 'Biosecurity Screening', desc: 'Screen synthetic DNA orders for hazardous, regulated, or unknown biothreat signatures before synthesis.', color: 'text-rose-400', bg: 'bg-rose-500/10' },
+              { icon: Cpu, title: 'Clinical Diagnostics', desc: 'Rapidly identify pathogenic mutations and genetic variations from patient samples locally and securely.', color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
+              { icon: Globe, title: 'Agricultural Biotech', desc: 'Analyze plant and soil genomes for crop improvement traits, pest resistance, and rapid GMO validation.', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+              { icon: Binary, title: 'Microbiome Research', desc: 'Classify microbial communities and track the spread of antimicrobial resistance genes in real-time.', color: 'text-cyan-400', bg: 'bg-cyan-500/10' }
+            ].map((app, i) => (
+              <div key={i} className="bg-card/40 backdrop-blur-md rounded-2xl border border-border/50 p-6 shadow-lg hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${app.bg}`}>
+                  <app.icon className={`w-6 h-6 ${app.color}`} />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">{app.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{app.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* How it Works / Tech */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-8">

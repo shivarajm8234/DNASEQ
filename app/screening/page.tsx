@@ -23,6 +23,7 @@ export default function ScreeningPage() {
   const [analysisResult, setAnalysisResult] = useState<DNNAnalysisResult | null>(null);
   const [apiMeta, setApiMeta] = useState<any>(null);
   const [modelState, setModelState] = useState<any>(null);
+  const [analysisMode, setAnalysisMode] = useState<'full' | 'friendly'>('full');
 
   useEffect(() => {
     const saved = localStorage.getItem('dna_model_state');
@@ -35,9 +36,10 @@ export default function ScreeningPage() {
     }
   }, []);
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (mode: 'full' | 'friendly') => {
     if (!sequence.trim()) return;
     
+    setAnalysisMode(mode);
     setIsAnalyzing(true);
     setAnalyzed(false);
 
@@ -124,14 +126,22 @@ export default function ScreeningPage() {
               Advanced statistical and neural screening powered by real-time DNN training on NCBI datasets.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={handleAnalyze}
+              onClick={() => handleAnalyze('friendly')}
               disabled={!sequence.trim() || isAnalyzing}
-              className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-primary/20"
+              className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+            >
+              <ActivitySquare className="w-5 h-5" />
+              {isAnalyzing && analysisMode === 'friendly' ? 'Analyzing...' : 'User Friendly Analysis'}
+            </button>
+            <button
+              onClick={() => handleAnalyze('full')}
+              disabled={!sequence.trim() || isAnalyzing}
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-primary/20"
             >
               <Brain className="w-5 h-5" />
-              {isAnalyzing ? 'Deep Scanning...' : 'Start Full Analysis'}
+              {isAnalyzing && analysisMode === 'full' ? 'Deep Scanning...' : 'Full Analysis'}
             </button>
             <button
               onClick={handleClear}
@@ -196,7 +206,95 @@ export default function ScreeningPage() {
           </div>
         </div>
 
-        {analyzed && analysisResult && (
+        {analyzed && analysisResult && analysisMode === 'friendly' && (
+          <div className="animate-in fade-in zoom-in-95 duration-700 space-y-8">
+            <div className="bg-gradient-to-b from-card to-background rounded-3xl border border-border p-8 md:p-12 shadow-[0_0_50px_rgba(16,185,129,0.1)] relative overflow-hidden group">
+               {/* Decorative background elements */}
+               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[100px] rounded-full translate-x-1/3 -translate-y-1/3 transition-transform duration-1000 group-hover:scale-110"></div>
+               <div className="absolute bottom-0 left-0 w-96 h-96 bg-indigo-500/10 blur-[100px] rounded-full -translate-x-1/3 translate-y-1/3 transition-transform duration-1000 group-hover:scale-110"></div>
+               
+               <div className="relative z-10 max-w-4xl mx-auto text-center space-y-8">
+                 <div className="w-24 h-24 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner border border-emerald-500/20 relative animate-bounce-slow">
+                   <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-xl animate-pulse"></div>
+                   <ActivitySquare className="w-12 h-12 text-emerald-400 relative z-10" />
+                 </div>
+                 
+                 <div className="space-y-4">
+                   <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">
+                     Analysis Complete
+                   </h2>
+                   <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto font-medium">
+                     We have successfully analyzed your DNA sequence. Here is a simple, easy-to-understand breakdown of our findings.
+                   </p>
+                 </div>
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left mt-16">
+                    {/* Organism Card */}
+                    <div className="bg-secondary/40 backdrop-blur-xl p-8 rounded-3xl border border-border/50 shadow-lg hover:shadow-indigo-500/10 hover:border-indigo-500/30 hover:-translate-y-1 transition-all duration-300 group/card relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-2xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
+                      <div className="flex items-center gap-4 mb-4 relative z-10">
+                        <div className="p-3 bg-indigo-500/20 rounded-2xl group-hover/card:bg-indigo-500/30 transition-colors">
+                          <Fingerprint className="w-6 h-6 text-indigo-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-foreground">What is this DNA?</h3>
+                      </div>
+                      <p className="text-muted-foreground leading-relaxed relative z-10">
+                        Our systems indicate this sequence is most closely related to <strong className="text-indigo-400 font-bold">{analysisResult.biologicalMetrics.identifiedOrganism.name}</strong>. It consists of <span className="text-foreground font-semibold">{analysisResult.sequenceLength.toLocaleString()} letters</span> (base pairs) in total.
+                      </p>
+                    </div>
+                    
+                    {/* Risk Card */}
+                    <div className="bg-secondary/40 backdrop-blur-xl p-8 rounded-3xl border border-border/50 shadow-lg hover:shadow-rose-500/10 hover:border-rose-500/30 hover:-translate-y-1 transition-all duration-300 group/card relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 blur-2xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
+                      <div className="flex items-center gap-4 mb-4 relative z-10">
+                        <div className="p-3 bg-rose-500/20 rounded-2xl group-hover/card:bg-rose-500/30 transition-colors">
+                          <ShieldAlert className="w-6 h-6 text-rose-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-foreground">Is it dangerous?</h3>
+                      </div>
+                      <p className="text-muted-foreground leading-relaxed relative z-10">
+                        The sequence has a risk score of <strong className={`font-bold ${analysisResult.riskScore > 70 ? 'text-rose-400' : analysisResult.riskScore > 30 ? 'text-amber-400' : 'text-emerald-400'}`}>{analysisResult.riskScore}%</strong>. The overall safety level is classified as <strong className="uppercase tracking-wide text-foreground font-bold">{analysisResult.riskLevel.replace('-', ' ')}</strong>.
+                      </p>
+                    </div>
+                    
+                    {/* Mutations Card */}
+                    <div className="bg-secondary/40 backdrop-blur-xl p-8 rounded-3xl border border-border/50 shadow-lg hover:shadow-purple-500/10 hover:border-purple-500/30 hover:-translate-y-1 transition-all duration-300 group/card relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 blur-2xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
+                      <div className="flex items-center gap-4 mb-4 relative z-10">
+                        <div className="p-3 bg-purple-500/20 rounded-2xl group-hover/card:bg-purple-500/30 transition-colors">
+                          <Bug className="w-6 h-6 text-purple-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-foreground">Are there mutations?</h3>
+                      </div>
+                      <p className="text-muted-foreground leading-relaxed relative z-10">
+                        {analysisResult.biologicalMetrics.mutations.length > 0 ? (
+                          <>We detected <strong className="text-purple-400 font-bold">{analysisResult.biologicalMetrics.mutations.length} unusual mutations</strong> in this sequence that might require further study.</>
+                        ) : (
+                          <>We did not find any significant harmful mutations in this sequence. The DNA structure appears standard.</>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Quality Card */}
+                    <div className="bg-secondary/40 backdrop-blur-xl p-8 rounded-3xl border border-border/50 shadow-lg hover:shadow-cyan-500/10 hover:border-cyan-500/30 hover:-translate-y-1 transition-all duration-300 group/card relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 blur-2xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
+                      <div className="flex items-center gap-4 mb-4 relative z-10">
+                        <div className="p-3 bg-cyan-500/20 rounded-2xl group-hover/card:bg-cyan-500/30 transition-colors">
+                          <ActivitySquare className="w-6 h-6 text-cyan-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-foreground">Biological Quality</h3>
+                      </div>
+                      <p className="text-muted-foreground leading-relaxed relative z-10">
+                        The overall biological quality score is <strong className="text-cyan-400 font-bold text-xl">{analysisResult.qualityScore}%</strong>. This metric helps us understand how stable and viable this genetic material is.
+                      </p>
+                    </div>
+                 </div>
+               </div>
+            </div>
+          </div>
+        )}
+
+        {analyzed && analysisResult && analysisMode === 'full' && (
           <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 space-y-12">
             
             {/* Module 1: Statistical DNA Analysis */}
